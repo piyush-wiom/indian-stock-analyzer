@@ -952,11 +952,9 @@ function fetchJSON(url) {
 app.get('/api/mf/search', async (req, res) => {
   const q = (req.query.q || '').toLowerCase().trim();
   if (q.length < 2) return res.json([]);
-  const data = await fetchJSON('https://api.mfapi.in/mf');
+  const data = await fetchJSON('https://api.mfapi.in/mf/search?q=' + encodeURIComponent(q));
   if (!data) return res.json([]);
-  const starts   = data.filter(f => f.schemeName.toLowerCase().startsWith(q));
-  const contains = data.filter(f => f.schemeName.toLowerCase().includes(q) && !f.schemeName.toLowerCase().startsWith(q));
-  res.json([...starts, ...contains].slice(0, 25));
+  res.json(data.slice(0, 25));
 });
 
 app.get('/api/mf/:code', async (req, res) => {
