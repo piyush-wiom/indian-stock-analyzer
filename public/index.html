@@ -1896,17 +1896,23 @@ function renderNseCard(data) {
   const expiryOpts = (data.expiries || []).map(e =>
     `<option value="${e}" ${e === data.selectedExpiry ? 'selected' : ''}>${e}</option>`).join('');
 
-  const chainRows = (data.chain || []).map(r => `
+  const chainRows = (data.chain || []).map(r => {
+    const symCE = generateNseSymClient(data.symbol, data.selectedExpiry, r.strike, 'CE');
+    const symPE = generateNseSymClient(data.symbol, data.selectedExpiry, r.strike, 'PE');
+    const kiteUrlCE = `https://kite.zerodha.com/orders?action=buy&tradingsymbol=${symCE}&exchange=NFO&product=MIS&order_type=MARKET&quantity=${data.lotSize}`;
+    const kiteUrlPE = `https://kite.zerodha.com/orders?action=buy&tradingsymbol=${symPE}&exchange=NFO&product=MIS&order_type=MARKET&quantity=${data.lotSize}`;
+    return `
     <tr style="background:${r.isATM ? 'var(--blue-lt)' : 'transparent'};font-weight:${r.isATM ? '700' : '400'};">
-      <td style="color:${r.isATM ? 'var(--blue)' : 'inherit'};white-space:nowrap;">${r.strike}${r.isATM ? ' ★ATM' : ''}</td>
-      <td style="color:#3B6D11;">${inr(r.callPrice)}</td>
-      <td style="color:#A32D2D;">${inr(r.putPrice)}</td>
+      <td style="color:${r.isATM ? 'var(--blue)' : 'inherit'};white-space:nowrap;">${r.strike}${r.isATM ? ' ★' : ''}</td>
+      <td style="color:#3B6D11;">${inr(r.callPrice)}<br><a href="${kiteUrlCE}" target="_blank" style="font-size:10px;color:#387ED1;text-decoration:none;font-weight:600;">Buy CE↗</a></td>
+      <td style="color:#A32D2D;">${inr(r.putPrice)}<br><a href="${kiteUrlPE}" target="_blank" style="font-size:10px;color:#387ED1;text-decoration:none;font-weight:600;">Buy PE↗</a></td>
       <td>${fmt(r.callDelta)}</td>
       <td>${fmt(r.putDelta)}</td>
       <td style="color:#854F0B;">${fmt(r.callTheta)}</td>
       <td>${fmt(r.vega)}</td>
       <td>${r.iv}%</td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 
   // Neutral strangle box
   const neutralBox = `
@@ -1931,6 +1937,18 @@ function renderNseCard(data) {
           <div style="font-size:13px;font-weight:600;color:${sigTextColor};">${data.dirEmoji} ${data.direction.toUpperCase()} — ${data.recommendation}</div>
           <div style="font-size:20px;font-weight:800;color:${sigTextColor};margin-top:2px;">BUY ${data.symbol} ${data.recStrike} ${data.recType}</div>
           <div style="font-size:12px;color:var(--text2);margin-top:2px;">Expiry: ${data.selectedExpiry} &nbsp;|&nbsp; Confidence: ${data.confidence}% &nbsp;|&nbsp; Lot: ${data.lotSize} units</div>
+          <!-- NSE Symbol + Kite button -->
+          <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;">
+            <code id="nseSymCode" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:13px;font-weight:700;letter-spacing:.5px;">${data.recNseSymbol}</code>
+            <button onclick="copyNseSym('${data.recNseSymbol}')"
+              style="padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);font-size:12px;cursor:pointer;font-weight:600;">📋 Copy Symbol</button>
+            <a href="https://kite.zerodha.com/orders?action=buy&tradingsymbol=${data.recNseSymbol}&exchange=NFO&product=MIS&order_type=MARKET&quantity=${data.lotSize}"
+               target="_blank" rel="noopener noreferrer"
+               style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:#387ED1;color:#fff;border-radius:8px;text-decoration:none;font-size:13px;font-weight:700;">
+              <img src="https://zerodha.com/static/images/favicon.ico" width="14" height="14" style="border-radius:2px;" onerror="this.style.display='none'">
+              Buy on Kite
+            </a>
+          </div>
         </div>
         <div style="text-align:center;background:var(--surface);border-radius:10px;padding:10px 14px;border:1px solid var(--border);">
           <div style="font-size:11px;color:var(--text2);font-weight:600;">PREMIUM (Theoretical)</div>
@@ -2069,6 +2087,25 @@ function renderNseCard(data) {
   `;
   document.getElementById('optionsNseCard').style.display = 'block';
   document.getElementById('optionsResults').style.display = 'none';
+}
+
+// Mirror of server generateNseSymbol — runs in browser for chain table rows
+function generateNseSymClient(indexName, expiryLabel, strike, type) {
+  const d = new Date(expiryLabel.replace(/-/g, ' '));
+  const yy = String(d.getFullYear()).slice(2);
+  const month = d.getMonth();
+  const dd = String(d.getDate()).padStart(2, '0');
+  const monthAbbr = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][month];
+  const weeklyM  = ['1','2','3','4','5','6','7','8','9','O','N','D'][month];
+  const nextWeek = new Date(d); nextWeek.setDate(d.getDate() + 7);
+  const isMonthly = nextWeek.getMonth() !== d.getMonth();
+  return isMonthly
+    ? `${indexName}${yy}${monthAbbr}${strike}${type}`
+    : `${indexName}${yy}${weeklyM}${dd}${strike}${type}`;
+}
+
+function copyNseSym(sym) {
+  navigator.clipboard.writeText(sym).then(() => showToast('✅ Symbol copied: ' + sym));
 }
 
 async function reloadNseSignal(symbol, expiry) {

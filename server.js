@@ -1203,6 +1203,29 @@ function parseExpiryDate(label) {
   return new Date(label.replace(/-/g, ' '));
 }
 
+// Generate NSE trading symbol for Zerodha Kite
+// Weekly:  NIFTY2540723000CE  (YY + single-digit-month + DD + strike + type)
+// Monthly: NIFTY25APR23000CE  (YY + MMM + strike + type)
+function generateNseSymbol(indexName, expiryLabel, strike, type) {
+  const d = parseExpiryDate(expiryLabel);
+  const yy = String(d.getFullYear()).slice(2);
+  const month = d.getMonth(); // 0-indexed
+  const dd = String(d.getDate()).padStart(2, '0');
+  const monthAbbr = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][month];
+  // Weekly month chars: 1-9 = Jan-Sep, O = Oct, N = Nov, D = Dec
+  const weeklyM = ['1','2','3','4','5','6','7','8','9','O','N','D'][month];
+
+  // Determine if this is the monthly expiry (last Thursday/Wednesday of month)
+  const nextWeek = new Date(d);
+  nextWeek.setDate(d.getDate() + 7);
+  const isMonthly = nextWeek.getMonth() !== d.getMonth();
+
+  const sym = isMonthly
+    ? `${indexName}${yy}${monthAbbr}${strike}${type}`   // e.g. NIFTY25APR23000CE
+    : `${indexName}${yy}${weeklyM}${dd}${strike}${type}`; // e.g. NIFTY2540723000CE
+  return sym;
+}
+
 // ─────────────────────────────────────────────
 //  Route: Options Chain + Greeks
 // ─────────────────────────────────────────────
@@ -1262,6 +1285,11 @@ app.get('/api/options/:ticker', async (req, res) => {
       } else {
         recType = 'CE+PE'; recStrike = atmStrike; // strangle
       }
+
+      // NSE trading symbols for Kite
+      const nseSymbolCE = generateNseSymbol(nseSymbol, expiries[0], recStrike, 'CE');
+      const nseSymbolPE = generateNseSymbol(nseSymbol, expiries[0], recStrike, 'PE');
+      const recNseSymbol = recType === 'PE' ? nseSymbolPE : nseSymbolCE;
 
       // Chain: ATM ± 5 strikes
       const strikes = [];
@@ -1351,6 +1379,7 @@ app.get('/api/options/:ticker', async (req, res) => {
         confidence:     ind?.confidence || 0,
         recommendation: ind?.recommendation || 'Hold',
         recType, recStrike,
+        recNseSymbol, nseSymbolCE, nseSymbolPE,
         entryLow, entryHigh,
         premiumSL, premiumTgt1, premiumTgt2,
         indexSL, indexTarget1, indexTarget2,
