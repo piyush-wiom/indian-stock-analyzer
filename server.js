@@ -1179,22 +1179,62 @@ app.get('/api/financials/:ticker', async (req, res) => {
 //  NSE Option Chain helper (for NIFTY / BANKNIFTY)
 // ─────────────────────────────────────────────
 async function fetchNSEOptionChain(symbol) {
-  // symbol = 'NIFTY' or 'BANKNIFTY'
-  const baseHeaders = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36',
-    'Accept': 'application/json',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Referer': 'https://www.nseindia.com/option-chain',
-    'Connection': 'keep-alive',
-  };
-  // Step 1: get session cookie
-  await fetchJSON('https://www.nseindia.com', {
-    headers: { ...baseHeaders, Accept: 'text/html' },
-  }).catch(() => {});
-  // Step 2: fetch option chain
-  const url = `https://www.nseindia.com/api/option-chain-indices?symbol=${encodeURIComponent(symbol)}`;
-  const data = await fetchJSON(url, { headers: baseHeaders });
-  return data;
+  const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+  // Step 1: hit NSE homepage to collect Set-Cookie headers
+  const cookies = await new Promise((resolve) => {
+    const req = https.request({
+      hostname: 'www.nseindia.com',
+      path: '/',
+      method: 'GET',
+      headers: {
+        'User-Agent': UA,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+      },
+    }, (resp) => {
+      const setCookies = resp.headers['set-cookie'] || [];
+      const jar = setCookies.map(c => c.split(';')[0]).join('; ');
+      resp.resume(); // drain body
+      resolve(jar);
+    });
+    req.on('error', () => resolve(''));
+    req.end();
+  });
+
+  // Step 2: small delay to appear human
+  await new Promise(r => setTimeout(r, 600));
+
+  // Step 3: fetch option chain with the cookies
+  const apiPath = `/api/option-chain-indices?symbol=${encodeURIComponent(symbol)}`;
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: 'www.nseindia.com',
+      path: apiPath,
+      method: 'GET',
+      headers: {
+        'User-Agent': UA,
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Connection': 'keep-alive',
+        'Referer': 'https://www.nseindia.com/option-chain',
+        'X-Requested-With': 'XMLHttpRequest',
+        'Cookie': cookies,
+      },
+    }, (resp) => {
+      const chunks = [];
+      resp.on('data', c => chunks.push(c));
+      resp.on('end', () => {
+        const body = Buffer.concat(chunks).toString();
+        try { resolve(JSON.parse(body)); }
+        catch { reject(new Error('NSE returned non-JSON. Bot protection may be active.')); }
+      });
+    });
+    req.on('error', reject);
+    req.end();
+  });
 }
 
 // ─────────────────────────────────────────────
