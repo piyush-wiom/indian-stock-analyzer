@@ -1285,14 +1285,47 @@ app.get('/api/options/:ticker', async (req, res) => {
         };
       });
 
-      // Entry / SL / Targets from B-S price
-      const atmRow = chain.find(c => c.isATM);
+      // ATR for index-level SL/Target
+      const highs  = quotes.map(q => q.high).filter(Boolean);
+      const lows   = quotes.map(q => q.low).filter(Boolean);
+      const atr    = highs.length >= 14 ? calcATR(highs, lows, closes, 14) : spot * 0.01;
+
+      // Lot sizes (as per NSE)
+      const lotSize = nseSymbol === 'BANKNIFTY' ? 15 : 25;
+
+      // Entry / SL / Targets
+      const atmRow  = chain.find(c => c.isATM);
       const rawEntry = recType === 'PE' ? atmRow?.putPrice : atmRow?.callPrice;
       const entryLow  = rawEntry ? +rawEntry.toFixed(0) : 0;
-      const entryHigh = rawEntry ? +(rawEntry * 1.1).toFixed(0) : 0;
-      const stopLoss  = rawEntry ? +(rawEntry * 0.40).toFixed(0) : 0;
-      const target1   = rawEntry ? +(rawEntry * 1.80).toFixed(0) : 0;
-      const target2   = rawEntry ? +(rawEntry * 2.50).toFixed(0) : 0;
+      const entryHigh = rawEntry ? +(rawEntry * 1.08).toFixed(0) : 0;
+
+      // Premium-level SL/Target
+      const premiumSL   = rawEntry ? +(rawEntry * 0.40).toFixed(0) : 0;  // exit at -60%
+      const premiumTgt1 = rawEntry ? +(rawEntry * 1.80).toFixed(0) : 0;  // +80%
+      const premiumTgt2 = rawEntry ? +(rawEntry * 2.50).toFixed(0) : 0;  // +150%
+
+      // Index-level SL/Target (ATR-based)
+      const isBullish = direction === 'Bullish';
+      const isBearish = direction === 'Bearish';
+      const indexSL      = isBullish ? +(spot - 1.5 * atr).toFixed(0)
+                         : isBearish ? +(spot + 1.5 * atr).toFixed(0) : null;
+      const indexTarget1 = isBullish ? +(spot + 1.5 * atr).toFixed(0)
+                         : isBearish ? +(spot - 1.5 * atr).toFixed(0) : null;
+      const indexTarget2 = isBullish ? +(spot + 3.0 * atr).toFixed(0)
+                         : isBearish ? +(spot - 3.0 * atr).toFixed(0) : null;
+
+      // Breakeven index level
+      const breakeven = recType === 'CE' ? recStrike + entryLow
+                      : recType === 'PE' ? recStrike - entryLow : null;
+
+      // Lot economics
+      const costPerLot   = entryLow * lotSize;
+      const maxLossLot   = (entryLow - premiumSL) * lotSize;
+      const profitLot1   = (premiumTgt1 - entryLow) * lotSize;
+      const profitLot2   = (premiumTgt2 - entryLow) * lotSize;
+      const thetaPerDay  = atmRow ? Math.abs(recType === 'PE' ? atmRow.putTheta : atmRow.callTheta) : 0;
+      const thetaCostLot = +(thetaPerDay * lotSize).toFixed(0);
+
       const holdingPeriod = score >= 3 ? 'Hold till expiry' : score >= 1 || score <= -1 ? '1–2 days' : 'Intraday only';
 
       // Signal pills
@@ -1319,7 +1352,12 @@ app.get('/api/options/:ticker', async (req, res) => {
         recommendation: ind?.recommendation || 'Hold',
         recType, recStrike,
         entryLow, entryHigh,
-        stopLoss, target1, target2,
+        premiumSL, premiumTgt1, premiumTgt2,
+        indexSL, indexTarget1, indexTarget2,
+        breakeven,
+        lotSize, costPerLot, maxLossLot, profitLot1, profitLot2,
+        thetaPerDay: +thetaPerDay.toFixed(2), thetaCostLot,
+        atr: +atr.toFixed(0),
         holdingPeriod,
         expiries,
         selectedExpiry,

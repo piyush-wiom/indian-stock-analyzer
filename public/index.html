@@ -1884,103 +1884,168 @@ async function loadOptions() {
 function renderNseCard(data) {
   const sign = data.change >= 0 ? '+' : '';
   const chgColor = data.change >= 0 ? '#3B6D11' : '#A32D2D';
-  const vixNote = data.vix < 13 ? 'Very Low — Options cheap' : data.vix < 18 ? 'Low — Good for buying' : data.vix < 25 ? 'Moderate' : 'High — Sell premium';
+  const vixNote = data.vix < 13 ? 'Very Low — Options cheap' : data.vix < 18 ? 'Low — Good to buy' : data.vix < 25 ? 'Moderate' : 'High — Prefer selling';
   const isNeutral = data.direction === 'Neutral';
   const isBull = data.direction === 'Bullish';
   const sigBg = isBull ? '#EAF3DE' : isNeutral ? '#FAEEDA' : '#FCEBEB';
   const sigBorder = isBull ? '#639922' : isNeutral ? '#EF9F27' : '#E24B4A';
   const sigTextColor = isBull ? '#3B6D11' : isNeutral ? '#854F0B' : '#A32D2D';
+  const inr = v => v != null ? '₹' + Number(v).toLocaleString('en-IN') : '—';
+  const fmt = v => v != null ? v : '—';
 
-  // Build expiry selector
   const expiryOpts = (data.expiries || []).map(e =>
     `<option value="${e}" ${e === data.selectedExpiry ? 'selected' : ''}>${e}</option>`).join('');
 
-  // Chain table rows
   const chainRows = (data.chain || []).map(r => `
     <tr style="background:${r.isATM ? 'var(--blue-lt)' : 'transparent'};font-weight:${r.isATM ? '700' : '400'};">
-      <td style="color:${r.isATM ? 'var(--blue)' : 'inherit'};">${r.strike}${r.isATM ? ' ★' : ''}</td>
-      <td style="color:#3B6D11;">₹${r.callPrice ?? '—'}</td>
-      <td style="color:#A32D2D;">₹${r.putPrice ?? '—'}</td>
-      <td>${r.callDelta ?? '—'}</td>
-      <td>${r.putDelta ?? '—'}</td>
-      <td>${r.callTheta ?? '—'}</td>
-      <td>${r.vega ?? '—'}</td>
+      <td style="color:${r.isATM ? 'var(--blue)' : 'inherit'};white-space:nowrap;">${r.strike}${r.isATM ? ' ★ATM' : ''}</td>
+      <td style="color:#3B6D11;">${inr(r.callPrice)}</td>
+      <td style="color:#A32D2D;">${inr(r.putPrice)}</td>
+      <td>${fmt(r.callDelta)}</td>
+      <td>${fmt(r.putDelta)}</td>
+      <td style="color:#854F0B;">${fmt(r.callTheta)}</td>
+      <td>${fmt(r.vega)}</td>
       <td>${r.iv}%</td>
     </tr>`).join('');
 
-  const tradeBox = isNeutral
-    ? `<div style="padding:16px 20px;background:${sigBg};border:2px solid ${sigBorder};border-radius:12px;margin-bottom:16px;">
-        <div style="font-size:16px;font-weight:700;color:${sigTextColor};margin-bottom:10px;">↔️ NEUTRAL — Strangle Strategy</div>
-        <div style="font-size:13px;color:var(--text);">
-          <b>Buy</b> ${data.symbol} <b>${data.recStrike} CE + ${data.recStrike} PE</b> (${data.selectedExpiry})<br>
-          Entry CE ≈ <b>₹${data.entryLow}</b> &nbsp;|&nbsp; Entry PE ≈ <b>₹${data.entryLow}</b><br>
-          Exit both sides if index moves > ${Math.round(data.recStrike * 0.015)} points<br>
-          <span style="color:var(--text2);font-size:12px;">Hold: ${data.holdingPeriod}</span>
+  // Neutral strangle box
+  const neutralBox = `
+    <div style="padding:18px 20px;background:${sigBg};border:2px solid ${sigBorder};border-radius:14px;margin-bottom:16px;">
+      <div style="font-size:15px;font-weight:700;color:${sigTextColor};margin-bottom:12px;">↔️ NEUTRAL — Buy Strangle</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px;">
+        <div><span style="color:var(--text2);">Buy CE</span><br><b>${data.symbol} ${data.recStrike} CE</b></div>
+        <div><span style="color:var(--text2);">Buy PE</span><br><b>${data.symbol} ${data.recStrike} PE</b></div>
+        <div><span style="color:var(--text2);">Expiry</span><br><b>${data.selectedExpiry}</b></div>
+        <div><span style="color:var(--text2);">Combined Entry ≈</span><br><b>${inr(data.entryLow * 2)}</b></div>
+        <div><span style="color:var(--text2);">Exit if index moves</span><br><b>> ${Math.round(data.recStrike * 0.015)} pts</b></div>
+        <div><span style="color:var(--text2);">Lot Cost (1 lot each)</span><br><b>${inr(data.entryLow * data.lotSize * 2)}</b></div>
+      </div>
+    </div>`;
+
+  // Directional trade box
+  const dirBox = `
+    <div style="padding:18px 20px;background:${sigBg};border:2px solid ${sigBorder};border-radius:14px;margin-bottom:16px;">
+      <!-- Header -->
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
+        <div>
+          <div style="font-size:13px;font-weight:600;color:${sigTextColor};">${data.dirEmoji} ${data.direction.toUpperCase()} — ${data.recommendation}</div>
+          <div style="font-size:20px;font-weight:800;color:${sigTextColor};margin-top:2px;">BUY ${data.symbol} ${data.recStrike} ${data.recType}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px;">Expiry: ${data.selectedExpiry} &nbsp;|&nbsp; Confidence: ${data.confidence}% &nbsp;|&nbsp; Lot: ${data.lotSize} units</div>
         </div>
-      </div>`
-    : `<div style="padding:16px 20px;background:${sigBg};border:2px solid ${sigBorder};border-radius:12px;margin-bottom:16px;">
-        <div style="font-size:16px;font-weight:700;color:${sigTextColor};margin-bottom:2px;">${data.dirEmoji} ${data.direction.toUpperCase()} — ${data.recommendation} &nbsp;<span style="font-size:12px;font-weight:500;opacity:0.8;">(${data.confidence}% confidence)</span></div>
-        <div style="font-size:22px;font-weight:800;color:${sigTextColor};margin:8px 0;">BUY ${data.symbol} ${data.recStrike} ${data.recType}</div>
-        <div style="font-size:13px;color:var(--text);line-height:1.9;">
-          <b>Expiry:</b> ${data.selectedExpiry}<br>
-          <b>Entry Range:</b> ₹${data.entryLow} – ₹${data.entryHigh} &nbsp;<span style="color:var(--text2);font-size:12px;">(theoretical, check live premium)</span><br>
-          <b style="color:#A32D2D;">Stop Loss:</b> ₹${data.stopLoss} &nbsp;<span style="color:var(--text2);font-size:12px;">(exit if premium drops here)</span><br>
-          <b style="color:#3B6D11;">Target 1:</b> ₹${data.target1} &nbsp;<span style="color:var(--text2);font-size:12px;">(+80%)</span><br>
-          <b style="color:#3B6D11;">Target 2:</b> ₹${data.target2} &nbsp;<span style="color:var(--text2);font-size:12px;">(+150%)</span><br>
-          <b>Hold:</b> ${data.holdingPeriod}
+        <div style="text-align:center;background:var(--surface);border-radius:10px;padding:10px 14px;border:1px solid var(--border);">
+          <div style="font-size:11px;color:var(--text2);font-weight:600;">PREMIUM (Theoretical)</div>
+          <div style="font-size:22px;font-weight:800;color:var(--blue);">${inr(data.entryLow)}</div>
+          <div style="font-size:11px;color:var(--text2);">to ${inr(data.entryHigh)} per unit</div>
         </div>
-      </div>`;
+      </div>
+
+      <!-- 2-column grid: Premium levels + Index levels -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+
+        <!-- Premium SL/Target -->
+        <div style="background:var(--surface);border-radius:10px;padding:14px;border:1px solid var(--border);">
+          <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:10px;letter-spacing:.5px;">PREMIUM LEVELS</div>
+          <div style="font-size:13px;line-height:2;">
+            <div style="display:flex;justify-content:space-between;"><span>Entry</span><b style="color:var(--blue);">${inr(data.entryLow)} – ${inr(data.entryHigh)}</b></div>
+            <div style="display:flex;justify-content:space-between;"><span style="color:#A32D2D;">Stop Loss</span><b style="color:#A32D2D;">${inr(data.premiumSL)} <span style="font-weight:400;font-size:11px;">(-60%)</span></b></div>
+            <div style="display:flex;justify-content:space-between;"><span style="color:#3B6D11;">Target 1</span><b style="color:#3B6D11;">${inr(data.premiumTgt1)} <span style="font-weight:400;font-size:11px;">(+80%)</span></b></div>
+            <div style="display:flex;justify-content:space-between;"><span style="color:#3B6D11;">Target 2</span><b style="color:#3B6D11;">${inr(data.premiumTgt2)} <span style="font-weight:400;font-size:11px;">(+150%)</span></b></div>
+          </div>
+        </div>
+
+        <!-- Index SL/Target -->
+        <div style="background:var(--surface);border-radius:10px;padding:14px;border:1px solid var(--border);">
+          <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:10px;letter-spacing:.5px;">INDEX LEVELS (ATR-based)</div>
+          <div style="font-size:13px;line-height:2;">
+            <div style="display:flex;justify-content:space-between;"><span>Current</span><b>${inr(data.spot)}</b></div>
+            <div style="display:flex;justify-content:space-between;"><span style="color:#A32D2D;">Index SL</span><b style="color:#A32D2D;">${inr(data.indexSL)} <span style="font-weight:400;font-size:11px;">(exit option)</span></b></div>
+            <div style="display:flex;justify-content:space-between;"><span style="color:#3B6D11;">Index Tgt 1</span><b style="color:#3B6D11;">${inr(data.indexTarget1)}</b></div>
+            <div style="display:flex;justify-content:space-between;"><span style="color:#3B6D11;">Index Tgt 2</span><b style="color:#3B6D11;">${inr(data.indexTarget2)}</b></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lot economics row -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:12px;">
+        <div style="background:var(--surface);border-radius:8px;padding:10px;border:1px solid var(--border);text-align:center;">
+          <div style="font-size:10px;color:var(--text2);font-weight:600;">COST / LOT</div>
+          <div style="font-size:15px;font-weight:700;color:var(--blue);">${inr(data.costPerLot)}</div>
+        </div>
+        <div style="background:#FCEBEB;border-radius:8px;padding:10px;border:1px solid #F0BABA;text-align:center;">
+          <div style="font-size:10px;color:#A32D2D;font-weight:600;">MAX LOSS / LOT</div>
+          <div style="font-size:15px;font-weight:700;color:#A32D2D;">${inr(data.maxLossLot)}</div>
+        </div>
+        <div style="background:#EAF3DE;border-radius:8px;padding:10px;border:1px solid #B3D48A;text-align:center;">
+          <div style="font-size:10px;color:#3B6D11;font-weight:600;">PROFIT TGT 1 / LOT</div>
+          <div style="font-size:15px;font-weight:700;color:#3B6D11;">${inr(data.profitLot1)}</div>
+        </div>
+        <div style="background:#EAF3DE;border-radius:8px;padding:10px;border:1px solid #B3D48A;text-align:center;">
+          <div style="font-size:10px;color:#3B6D11;font-weight:600;">PROFIT TGT 2 / LOT</div>
+          <div style="font-size:15px;font-weight:700;color:#3B6D11;">${inr(data.profitLot2)}</div>
+        </div>
+        <div style="background:#FAEEDA;border-radius:8px;padding:10px;border:1px solid #F0D0A0;text-align:center;">
+          <div style="font-size:10px;color:#854F0B;font-weight:600;">THETA DECAY/DAY</div>
+          <div style="font-size:15px;font-weight:700;color:#854F0B;">-${inr(data.thetaCostLot)}</div>
+        </div>
+        <div style="background:var(--surface2);border-radius:8px;padding:10px;border:1px solid var(--border);text-align:center;">
+          <div style="font-size:10px;color:var(--text2);font-weight:600;">BREAKEVEN</div>
+          <div style="font-size:15px;font-weight:700;">${inr(data.breakeven)}</div>
+        </div>
+      </div>
+
+      <div style="font-size:12px;color:var(--text2);">⏱ Hold: <b>${data.holdingPeriod}</b> &nbsp;|&nbsp; ATR: ${inr(data.atr)} pts &nbsp;|&nbsp; Lot size: ${data.lotSize} units</div>
+    </div>`;
 
   document.getElementById('optionsNseCard').innerHTML = `
-    <!-- Spot + VIX bar -->
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
+    <!-- Spot + VIX + Expiry bar -->
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
       <div style="display:flex;align-items:center;gap:14px;">
-        <span style="font-size:22px;font-weight:800;">${data.symbol}</span>
+        <span style="font-size:20px;font-weight:800;">${data.symbol}</span>
         <div>
-          <div style="font-size:24px;font-weight:700;">₹${data.spot.toLocaleString('en-IN')}</div>
+          <div style="font-size:22px;font-weight:700;">${inr(data.spot)}</div>
           <div style="font-size:13px;color:${chgColor};font-weight:600;">${sign}${data.change} (${sign}${data.changePct}%)</div>
         </div>
       </div>
-      <div style="background:var(--surface2);border-radius:10px;padding:10px 16px;text-align:center;">
-        <div style="font-size:11px;color:var(--text2);font-weight:600;">INDIA VIX</div>
-        <div style="font-size:20px;font-weight:700;">${data.vix}</div>
-        <div style="font-size:11px;color:var(--text2);">${vixNote}</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <div style="background:var(--surface2);border-radius:10px;padding:8px 14px;text-align:center;border:1px solid var(--border);">
+          <div style="font-size:10px;color:var(--text2);font-weight:600;">INDIA VIX</div>
+          <div style="font-size:18px;font-weight:700;">${data.vix}</div>
+          <div style="font-size:10px;color:var(--text2);">${vixNote}</div>
+        </div>
+        <div>
+          <div style="font-size:10px;font-weight:600;color:var(--text2);margin-bottom:4px;">EXPIRY</div>
+          <select onchange="reloadNseSignal('${data.symbol}', this.value)"
+            style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);font-size:13px;font-weight:600;color:var(--text);">
+            ${expiryOpts}
+          </select>
+        </div>
       </div>
     </div>
 
-    <!-- Expiry selector -->
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
-      <label style="font-size:12px;font-weight:600;color:var(--text2);">EXPIRY:</label>
-      <select onchange="reloadNseSignal('${data.symbol}', this.value)"
-        style="padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);font-size:13px;font-weight:600;color:var(--text);">
-        ${expiryOpts}
-      </select>
-    </div>
-
-    <!-- Trade signal box -->
-    ${tradeBox}
+    <!-- Trade box -->
+    ${isNeutral ? neutralBox : dirBox}
 
     <!-- Technical signals -->
     <div style="margin-bottom:16px;">
-      <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px;">TECHNICAL SIGNALS</div>
+      <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:8px;letter-spacing:.5px;">TECHNICAL SIGNALS</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px;">
         ${(data.signals || []).map(s => `<span style="font-size:12px;padding:4px 10px;border-radius:20px;background:var(--surface2);border:1px solid var(--border);">${s}</span>`).join('')}
       </div>
     </div>
 
-    <!-- Greeks mini-table -->
+    <!-- Option chain table -->
     <div style="margin-bottom:16px;">
-      <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px;">THEORETICAL OPTION PRICES (Black-Scholes, IV=${data.chain?.[5]?.iv || '—'}%)</div>
+      <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:8px;letter-spacing:.5px;">OPTION CHAIN — ATM ± 5 STRIKES (IV ${data.chain?.[5]?.iv ?? '—'}%, Black-Scholes)</div>
       <div style="overflow-x:auto;">
         <table style="width:100%;font-size:12px;border-collapse:collapse;">
           <thead>
             <tr style="background:var(--surface2);">
-              <th style="padding:7px 10px;text-align:left;font-weight:600;">Strike</th>
+              <th style="padding:7px 10px;text-align:left;">Strike</th>
               <th style="padding:7px 10px;text-align:right;color:#3B6D11;">Call ₹</th>
               <th style="padding:7px 10px;text-align:right;color:#A32D2D;">Put ₹</th>
               <th style="padding:7px 10px;text-align:right;">C.Delta</th>
               <th style="padding:7px 10px;text-align:right;">P.Delta</th>
-              <th style="padding:7px 10px;text-align:right;">C.Theta</th>
+              <th style="padding:7px 10px;text-align:right;color:#854F0B;">C.Theta</th>
               <th style="padding:7px 10px;text-align:right;">Vega</th>
               <th style="padding:7px 10px;text-align:right;">IV%</th>
             </tr>
@@ -1990,17 +2055,17 @@ function renderNseCard(data) {
       </div>
     </div>
 
-    <!-- Execute on -->
-    <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px;">EXECUTE ON (live prices):</div>
+    <!-- Execute links -->
+    <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:8px;letter-spacing:.5px;">VERIFY LIVE PRICE & EXECUTE ON:</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px;">
       ${(data.links || []).map(l => `
         <a href="${l.url}" target="_blank" rel="noopener noreferrer"
-           style="flex:1;min-width:140px;display:flex;flex-direction:column;padding:10px 14px;background:var(--blue-lt);border:1px solid #C2D9F0;border-radius:10px;text-decoration:none;color:var(--blue-dk);">
+           style="flex:1;min-width:130px;display:flex;flex-direction:column;padding:10px 14px;background:var(--blue-lt);border:1px solid #C2D9F0;border-radius:10px;text-decoration:none;color:var(--blue-dk);">
           <span style="font-weight:600;font-size:13px;">${l.label}</span>
           <span style="font-size:11px;color:var(--text2);">${l.note}</span>
         </a>`).join('')}
     </div>
-    <div class="disclaimer" style="margin-top:14px;">⚠️ Theoretical prices only — for education, not trading advice. Verify live premiums before executing. Not SEBI-registered advice.</div>
+    <div class="disclaimer" style="margin-top:12px;">⚠️ Prices are theoretical (Black-Scholes model). Always verify live premium before trading. Not SEBI-registered advice.</div>
   `;
   document.getElementById('optionsNseCard').style.display = 'block';
   document.getElementById('optionsResults').style.display = 'none';
