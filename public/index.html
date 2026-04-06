@@ -256,6 +256,44 @@
   .dca-ladder { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
   .dca-pill { background: var(--blue-lt); color: var(--blue); padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; font-family: 'DM Mono', monospace; }
 
+  /* Daily Picks */
+  .picks-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(320px,1fr)); gap: 16px; margin-top: 20px; }
+  .pick-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow); }
+  .pick-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+  .pick-company { font-size: 15px; font-weight: 700; }
+  .pick-ticker { font-family: 'DM Mono', monospace; font-size: 11px; background: var(--surface2); padding: 3px 8px; border-radius: 6px; color: var(--text2); }
+  .pick-prices { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 12px 0; }
+  .pick-price-cell { text-align: center; padding: 8px; border-radius: 8px; }
+  .pick-price-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 3px; }
+  .pick-price-value { font-size: 15px; font-weight: 700; font-family: 'DM Mono', monospace; }
+
+  /* Financials tab */
+  .fin-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 20px 0 16px; }
+  .fin-tab { padding: 8px 16px; border: none; background: transparent; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--text2); border-bottom: 2.5px solid transparent; transition: all 0.15s; font-family: inherit; }
+  .fin-tab.active { color: var(--blue); border-bottom-color: var(--blue); font-weight: 600; }
+  .fin-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+  .fin-table th { background: var(--surface2); padding: 9px 12px; text-align: right; font-weight: 600; border: 1px solid var(--border); }
+  .fin-table th:first-child { text-align: left; }
+  .fin-table td { padding: 9px 12px; border: 1px solid var(--border); text-align: right; font-family: 'DM Mono', monospace; font-size: 12px; }
+  .fin-table td:first-child { text-align: left; font-family: inherit; font-weight: 600; }
+  .fin-table tr:hover td { background: var(--bg); }
+  .ratio-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 8px; }
+  .ratio-card { background: var(--surface2); border-radius: 10px; padding: 12px; text-align: center; }
+  .ratio-label { font-size: 11px; color: var(--text3); font-weight: 600; margin-bottom: 4px; }
+  .ratio-value { font-size: 18px; font-weight: 700; }
+
+  /* Options */
+  .opt-chain-wrap { overflow-x: auto; margin-top: 12px; }
+  .opt-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .opt-table th { background: #2C3E50; color: white; padding: 8px 10px; text-align: center; font-weight: 600; white-space: nowrap; }
+  .opt-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); text-align: center; font-family: 'DM Mono', monospace; }
+  .opt-table tr.atm td { background: var(--blue-lt); font-weight: 700; }
+  .opt-table tr.itm td { background: #f0fff4; }
+  .opt-table tr:hover td { background: var(--bg); }
+  .strategy-card { background: var(--blue-lt); border: 1.5px solid var(--blue); border-radius: var(--radius); padding: 16px 20px; margin-bottom: 16px; }
+  .strategy-title { font-size: 18px; font-weight: 700; color: var(--blue); margin-bottom: 6px; }
+  .strategy-reason { font-size: 13px; color: var(--text2); line-height: 1.7; }
+
   @media (max-width: 768px) {
     .sidebar { display: none; }
     .main { margin-left: 0; padding: 16px; }
@@ -273,6 +311,8 @@
 <nav class="sidebar">
   <div class="sidebar-logo"><span>📈</span> Stock Analyzer</div>
   <button class="nav-btn active" onclick="showPage('search',this)">🔍 Stock Search</button>
+  <button class="nav-btn" onclick="showPage('picks',this)">📈 Daily Top Picks</button>
+  <button class="nav-btn" onclick="showPage('options',this)">🎯 Options Analyzer</button>
   <button class="nav-btn" onclick="showPage('bulk',this)">📊 Bulk Analysis</button>
   <button class="nav-btn" onclick="showPage('portfolio',this)">💼 Portfolio Tracker</button>
   <button class="nav-btn" onclick="showPage('mf',this)">🏦 Mutual Funds & SIP</button>
@@ -363,6 +403,78 @@
       <b>Completely Free</b><br>
       <span style="font-size:13px;color:var(--text2);">No subscription,<br>no hidden charges</span>
     </div>
+  </div>
+</div>
+
+<!-- ── PAGE: Daily Top Picks ── -->
+<div id="page-picks" class="page">
+  <div class="page-title">📈 Daily Top Picks</div>
+  <div class="page-sub">Scans all Nifty 50 stocks and surfaces the best Buy/Strong Buy signals with entry, stop loss, and target.</div>
+
+  <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:8px;">
+    <button class="btn" onclick="loadDailyPicks()" id="scanBtn">🔄 Scan Nifty 50</button>
+    <span style="font-size:13px;color:var(--text2);" id="scanMeta"></span>
+  </div>
+
+  <div id="picksLoading" style="display:none;padding:40px;text-align:center;color:var(--text2);">
+    <div class="spinner"></div> Scanning 50 stocks — please wait ~30 seconds...
+  </div>
+
+  <div id="picksResults" style="display:none;">
+    <div id="picksGrid" class="picks-grid"></div>
+  </div>
+
+  <div id="picksEmpty" style="display:none;" class="card" style="text-align:center;padding:40px;">
+    <div style="font-size:36px;margin-bottom:12px;">🤔</div>
+    <b>No strong signals today</b><br>
+    <span style="font-size:13px;color:var(--text2);">Market may be in consolidation. Try again tomorrow.</span>
+  </div>
+
+  <div class="disclaimer" style="margin-top:20px;">
+    ⚠️ <b>Important:</b> These are algorithmic signals based on technical analysis only. Not SEBI-registered advice.
+    Always do your own research before investing. Past signals do not guarantee future performance.
+  </div>
+</div>
+
+<!-- ── PAGE: Options Analyzer ── -->
+<div id="page-options" class="page">
+  <div class="page-title">🎯 Options Analyzer</div>
+  <div class="page-sub">View live options chain with calculated Greeks (Delta, Gamma, Theta, Vega) and get a strategy recommendation.</div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+      <div style="flex:1;min-width:200px;">
+        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px;">Stock Ticker</div>
+        <input id="optionsInput" class="search-input" type="text"
+          placeholder="Enter ticker: RELIANCE, TCS, NIFTY..."
+          onkeydown="if(event.key==='Enter') loadOptions()">
+      </div>
+      <div style="min-width:160px;">
+        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px;">Expiry Date</div>
+        <select id="optionsExpiry" class="search-input" style="padding:11px 12px;" onchange="loadOptionsChain()">
+          <option value="">-- Load ticker first --</option>
+        </select>
+      </div>
+      <button class="btn" onclick="loadOptions()" id="optionsBtn">Load Chain 🎯</button>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+      <span class="quick-chip" onclick="optQuick('RELIANCE')">RELIANCE</span>
+      <span class="quick-chip" onclick="optQuick('TCS')">TCS</span>
+      <span class="quick-chip" onclick="optQuick('INFY')">INFY</span>
+      <span class="quick-chip" onclick="optQuick('HDFCBANK')">HDFCBANK</span>
+      <span class="quick-chip" onclick="optQuick('TATAMOTORS')">TATAMOTORS</span>
+    </div>
+  </div>
+
+  <div id="optionsLoading" style="display:none;padding:30px;text-align:center;color:var(--text2);">
+    <div class="spinner"></div> Fetching options chain...
+  </div>
+  <div id="optionsError" style="display:none;" class="disclaimer"></div>
+  <div id="optionsResults" style="display:none;"></div>
+
+  <div class="disclaimer" style="margin-top:16px;">
+    ⚠️ Options trading carries significant risk. Greeks are calculated using Black-Scholes model.
+    Not SEBI-registered advice. Consult a qualified advisor before trading options.
   </div>
 </div>
 
@@ -996,7 +1108,16 @@ function renderStockResult(d) {
       <div class="indicators-grid">${indCards}</div>
     </div>
 
-    <div class="disclaimer">
+    <!-- Financials Section -->
+    <div style="margin-top:20px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+        <div style="font-size:16px;font-weight:600;">📋 Company Financials</div>
+        <button class="btn btn-outline btn-sm" id="loadFinBtn" onclick="loadFinancials('${d.displayTicker}')">Load Financials</button>
+      </div>
+      <div id="financialsSection" style="display:none;"></div>
+    </div>
+
+    <div class="disclaimer" style="margin-top:16px;">
       ⚠️ This analysis is for educational purposes only. It is not SEBI-registered investment advice.
       Please consult your financial advisor before investing.
     </div>
@@ -1521,6 +1642,309 @@ function toggleDetail(id, btn) {
   const panel = document.getElementById(id);
   const isOpen = panel.classList.toggle('open');
   btn.textContent = isOpen ? '▲ Details' : '▼ Details';
+}
+
+// ── Daily Top Picks ───────────────────────────────────────────────────────────
+async function loadDailyPicks() {
+  const btn = document.getElementById('scanBtn');
+  btn.disabled = true; btn.textContent = '⏳ Scanning...';
+  document.getElementById('picksLoading').style.display = 'block';
+  document.getElementById('picksResults').style.display = 'none';
+  document.getElementById('picksEmpty').style.display = 'none';
+  document.getElementById('scanMeta').textContent = '';
+
+  try {
+    const res = await fetch('/api/daily-picks');
+    const data = await res.json();
+    if (!res.ok || data.error) { showToast('❌ ' + (data.error || 'Error')); return; }
+    renderDailyPicks(data);
+  } catch(e) {
+    showToast('🌐 Network error. Please try again.');
+  } finally {
+    btn.disabled = false; btn.textContent = '🔄 Scan Nifty 50';
+    document.getElementById('picksLoading').style.display = 'none';
+  }
+}
+
+function renderDailyPicks(data) {
+  const { picks, scanned, timestamp } = data;
+  const ts = new Date(timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  document.getElementById('scanMeta').textContent = `Scanned ${scanned} stocks • ${picks.length} signals found • ${ts}`;
+
+  if (!picks.length) {
+    document.getElementById('picksEmpty').style.display = 'block';
+    return;
+  }
+
+  const recColors = {
+    'Strong Buy': { bg:'#D5F5E3', color:'#00A36C', border:'#00A36C' },
+    'Buy':        { bg:'#EAFAF1', color:'#2ECC71', border:'#2ECC71' },
+  };
+
+  const cards = picks.map(p => {
+    const rc = recColors[p.recommendation] || { bg:'#FEF9E7', color:'#F39C12', border:'#F39C12' };
+    const chgColor = '#2ECC71';
+    return `
+    <div class="pick-card">
+      <div class="pick-header">
+        <div>
+          <div class="pick-company">${p.company}</div>
+          <span class="pick-ticker">${p.ticker}</span>
+        </div>
+        <span class="rec-badge" style="background:${rc.bg};color:${rc.color};border:1px solid ${rc.border};">${p.recommendation}</span>
+      </div>
+      <div class="pick-prices">
+        <div class="pick-price-cell" style="background:var(--surface2);">
+          <div class="pick-price-label" style="color:var(--text3);">Entry</div>
+          <div class="pick-price-value">₹${p.price.toLocaleString('en-IN')}</div>
+        </div>
+        <div class="pick-price-cell" style="background:#FDEDEC;">
+          <div class="pick-price-label" style="color:#E74C3C;">Stop Loss</div>
+          <div class="pick-price-value" style="color:#E74C3C;">₹${p.stopLoss.toLocaleString('en-IN')}</div>
+        </div>
+        <div class="pick-price-cell" style="background:#EAFAF1;">
+          <div class="pick-price-label" style="color:#2ECC71;">Target</div>
+          <div class="pick-price-value" style="color:#2ECC71;">₹${p.target.toLocaleString('en-IN')}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        <span class="badge" style="background:#E6F1FB;color:#185FA5;">R:R ${p.riskReward}</span>
+        <span class="badge" style="background:var(--surface2);color:var(--text2);">⏱ ${p.holdingPeriod}</span>
+        <span class="badge" style="background:var(--surface2);color:var(--text2);">RSI ${p.rsiValue}</span>
+        <span class="badge" style="background:${p.maCross==='Golden'?'#D5F5E3':p.maCross==='Death'?'#FDEDEC':'var(--surface2)'};color:${p.maCross==='Golden'?'#00A36C':p.maCross==='Death'?'#E74C3C':'var(--text2)'};">${p.maCross} Cross</span>
+      </div>
+      <div style="margin-bottom:6px;">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:3px;">Confidence: ${p.confidence}%</div>
+        <div style="background:#F0F0F0;border-radius:6px;height:6px;">
+          <div style="width:${p.confidence}%;background:${rc.color};height:6px;border-radius:6px;"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button class="btn btn-outline btn-sm" style="flex:1;" onclick="quickSearch('${p.ticker}')">📊 Full Analysis</button>
+        <button class="btn btn-outline btn-sm" onclick="addToWatchlist('${p.ticker}','${p.company.replace(/'/g,"\\'")}')">⭐</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('picksGrid').innerHTML = cards;
+  document.getElementById('picksResults').style.display = 'block';
+}
+
+// ── Financials ────────────────────────────────────────────────────────────────
+async function loadFinancials(ticker) {
+  const btn = document.getElementById('loadFinBtn');
+  const section = document.getElementById('financialsSection');
+  if (!btn || !section) return;
+  btn.disabled = true; btn.textContent = '⏳ Loading...';
+  section.style.display = 'block';
+  section.innerHTML = '<div style="padding:20px;text-align:center;"><div class="spinner"></div> Fetching financial data...</div>';
+
+  try {
+    const res = await fetch('/api/financials/' + encodeURIComponent(ticker));
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      section.innerHTML = `<div class="disclaimer">${data.error || 'Financial data not available.'}</div>`;
+      return;
+    }
+    renderFinancials(data, section);
+    btn.textContent = '✓ Loaded';
+  } catch(e) {
+    section.innerHTML = '<div class="disclaimer">🌐 Could not load financials. Try again.</div>';
+    btn.disabled = false; btn.textContent = 'Load Financials';
+  }
+}
+
+function renderFinancials(data, container) {
+  const fmtCr = v => v != null ? '₹' + v.toLocaleString('en-IN') + ' Cr' : '—';
+  const fmtPct = v => v != null ? v + '%' : '—';
+  const fmtX = v => v != null ? v + 'x' : '—';
+  const years = data.income.map(r => r.date).join('</th><th>');
+
+  const incRows = [
+    ['Revenue',     data.income.map(r => fmtCr(r.revenue))],
+    ['Gross Profit',data.income.map(r => fmtCr(r.grossProfit))],
+    ['EBITDA',      data.income.map(r => fmtCr(r.ebitda))],
+    ['Net Income',  data.income.map(r => fmtCr(r.netIncome))],
+    ['EPS (₹)',     data.income.map(r => r.eps != null ? '₹'+r.eps : '—')],
+  ].map(([label, vals]) => `<tr><td>${label}</td>${vals.map(v=>`<td>${v}</td>`).join('')}</tr>`).join('');
+
+  const balRows = [
+    ['Total Assets',  data.balance.map(r => fmtCr(r.totalAssets))],
+    ['Total Debt',    data.balance.map(r => fmtCr(r.totalDebt))],
+    ['Cash',          data.balance.map(r => fmtCr(r.cash))],
+    ['Book Value',    data.balance.map(r => fmtCr(r.bookValue))],
+    ['Current Ratio', data.balance.map(r => r.currentRatio != null ? r.currentRatio : '—')],
+  ].map(([label, vals]) => `<tr><td>${label}</td>${vals.map(v=>`<td>${v}</td>`).join('')}</tr>`).join('');
+
+  const cfRows = [
+    ['Operating CF', data.cashflow.map(r => fmtCr(r.operatingCF))],
+    ['Investing CF', data.cashflow.map(r => fmtCr(r.investingCF))],
+    ['Financing CF', data.cashflow.map(r => fmtCr(r.financingCF))],
+    ['Free CF',      data.cashflow.map(r => fmtCr(r.freeCF))],
+  ].map(([label, vals]) => `<tr><td>${label}</td>${vals.map(v=>`<td>${v}</td>`).join('')}</tr>`).join('');
+
+  const r = data.ratios;
+  const ratioCards = [
+    ['P/E Ratio',       fmtX(r.peRatio)],
+    ['P/B Ratio',       fmtX(r.pbRatio)],
+    ['ROE',             fmtPct(r.roe)],
+    ['ROA',             fmtPct(r.roa)],
+    ['Debt / Equity',   r.debtToEquity != null ? r.debtToEquity : '—'],
+    ['Operating Margin',fmtPct(r.operatingMargin)],
+    ['Profit Margin',   fmtPct(r.profitMargin)],
+    ['Revenue Growth',  fmtPct(r.revenueGrowth)],
+    ['Earnings Growth', fmtPct(r.earningsGrowth)],
+    ['Current Ratio',   r.currentRatio != null ? r.currentRatio : '—'],
+    ['Quick Ratio',     r.quickRatio != null ? r.quickRatio : '—'],
+    ['Free Cash Flow',  fmtCr(r.freeCashflow)],
+  ].map(([label, val]) => `<div class="ratio-card"><div class="ratio-label">${label}</div><div class="ratio-value">${val}</div></div>`).join('');
+
+  container.innerHTML = `
+    <div class="fin-tabs">
+      <button class="fin-tab active" onclick="showFinTab('income',this)">📊 Income Statement</button>
+      <button class="fin-tab" onclick="showFinTab('balance',this)">🏦 Balance Sheet</button>
+      <button class="fin-tab" onclick="showFinTab('cashflow',this)">💵 Cash Flow</button>
+      <button class="fin-tab" onclick="showFinTab('ratios',this)">📐 Key Ratios</button>
+    </div>
+    <div id="fin-income" class="fin-tab-pane">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:6px;">Values in ₹ Crores (Annual)</div>
+      <div style="overflow-x:auto;"><table class="fin-table">
+        <tr><th>Metric</th><th>${years}</th></tr>${incRows}
+      </table></div>
+    </div>
+    <div id="fin-balance" class="fin-tab-pane" style="display:none;">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:6px;">Values in ₹ Crores (Annual)</div>
+      <div style="overflow-x:auto;"><table class="fin-table">
+        <tr><th>Metric</th><th>${years}</th></tr>${balRows}
+      </table></div>
+    </div>
+    <div id="fin-cashflow" class="fin-tab-pane" style="display:none;">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:6px;">Values in ₹ Crores (Annual)</div>
+      <div style="overflow-x:auto;"><table class="fin-table">
+        <tr><th>Metric</th><th>${years}</th></tr>${cfRows}
+      </table></div>
+    </div>
+    <div id="fin-ratios" class="fin-tab-pane" style="display:none;">
+      <div class="ratio-grid">${ratioCards}</div>
+    </div>
+  `;
+}
+
+function showFinTab(tab, btn) {
+  document.querySelectorAll('.fin-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.fin-tab-pane').forEach(p => p.style.display = 'none');
+  if (btn) btn.classList.add('active');
+  const el = document.getElementById('fin-' + tab);
+  if (el) el.style.display = 'block';
+}
+
+// ── Options Analyzer ──────────────────────────────────────────────────────────
+function optQuick(ticker) {
+  document.getElementById('optionsInput').value = ticker;
+  loadOptions();
+}
+
+async function loadOptions() {
+  const ticker = document.getElementById('optionsInput').value.trim();
+  if (!ticker) { showToast('Please enter a ticker.'); return; }
+  const btn = document.getElementById('optionsBtn');
+  btn.disabled = true; btn.textContent = '⏳ Loading...';
+  document.getElementById('optionsLoading').style.display = 'block';
+  document.getElementById('optionsResults').style.display = 'none';
+  document.getElementById('optionsError').style.display = 'none';
+
+  try {
+    const res = await fetch('/api/options/' + encodeURIComponent(ticker));
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      document.getElementById('optionsError').textContent = '⚠️ ' + data.error;
+      document.getElementById('optionsError').style.display = 'block';
+      return;
+    }
+    // Populate expiry dropdown
+    const sel = document.getElementById('optionsExpiry');
+    sel.innerHTML = data.expiries.map(e => `<option value="${e}" ${e===data.selectedExpiry?'selected':''}>${e}</option>`).join('');
+    sel.onchange = () => loadOptionsChain(ticker, sel.value);
+    renderOptions(data);
+  } catch(e) {
+    document.getElementById('optionsError').textContent = '🌐 Network error. Please try again.';
+    document.getElementById('optionsError').style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Load Chain 🎯';
+    document.getElementById('optionsLoading').style.display = 'none';
+  }
+}
+
+async function loadOptionsChain(ticker, expiry) {
+  ticker = ticker || document.getElementById('optionsInput').value.trim();
+  expiry = expiry || document.getElementById('optionsExpiry').value;
+  if (!ticker || !expiry) return;
+  document.getElementById('optionsLoading').style.display = 'block';
+  document.getElementById('optionsResults').style.display = 'none';
+  try {
+    const res = await fetch(`/api/options/${encodeURIComponent(ticker)}?expiry=${expiry}`);
+    const data = await res.json();
+    if (data.error) { showToast('⚠️ ' + data.error); return; }
+    renderOptions(data);
+  } catch(e) { showToast('🌐 Error loading chain.'); }
+  finally { document.getElementById('optionsLoading').style.display = 'none'; }
+}
+
+function renderOptions(data) {
+  const fmt = v => v != null ? v : '—';
+  const fmtP = v => v != null ? '₹' + v.toLocaleString('en-IN') : '—';
+
+  const buildRows = (contracts) => contracts.map(c => `
+    <tr class="${c.isATM ? 'atm' : c.inTheMoney ? 'itm' : ''}">
+      <td style="font-weight:${c.isATM?'700':'400'};color:${c.isATM?'var(--blue)':'inherit'};">${fmtP(c.strike)}${c.isATM?' ★':''}</td>
+      <td>${fmtP(c.lastPrice)}</td>
+      <td>${fmtP(c.bid)}</td>
+      <td>${fmtP(c.ask)}</td>
+      <td>${fmt(c.volume)}</td>
+      <td>${fmt(c.openInterest)}</td>
+      <td>${fmt(c.iv)}%</td>
+      <td>${fmt(c.delta)}</td>
+      <td>${fmt(c.gamma)}</td>
+      <td>${fmt(c.theta)}</td>
+      <td>${fmt(c.vega)}</td>
+    </tr>`).join('');
+
+  const callRows = buildRows(data.calls);
+  const putRows  = buildRows(data.puts);
+  const thead = `<tr><th>Strike</th><th>Premium</th><th>Bid</th><th>Ask</th><th>Volume</th><th>OI</th><th>IV</th><th>Delta</th><th>Gamma</th><th>Theta</th><th>Vega</th></tr>`;
+
+  document.getElementById('optionsResults').innerHTML = `
+    <div class="strategy-card">
+      <div class="strategy-title">${data.strategy}</div>
+      <div class="strategy-reason">${data.strategyReason}</div>
+      <div style="margin-top:10px;display:flex;gap:12px;flex-wrap:wrap;font-size:13px;">
+        <span>📍 Spot: <b>₹${data.spot?.toLocaleString('en-IN') || '—'}</b></span>
+        <span>📅 Expiry: <b>${data.selectedExpiry}</b></span>
+        <span>📊 Avg IV (ATM): <b>${data.avgIV}%</b></span>
+      </div>
+    </div>
+
+    <div class="mf-tabs" style="margin-bottom:12px;">
+      <button class="mf-tab active" onclick="showOptTab('calls',this)">📈 Calls (${data.calls.length})</button>
+      <button class="mf-tab" onclick="showOptTab('puts',this)">📉 Puts (${data.puts.length})</button>
+    </div>
+    <div id="opt-calls">
+      <div class="opt-chain-wrap"><table class="opt-table">${thead}${callRows}</table></div>
+    </div>
+    <div id="opt-puts" style="display:none;">
+      <div class="opt-chain-wrap"><table class="opt-table">${thead}${putRows}</table></div>
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-top:8px;">★ = ATM (At The Money) &nbsp;|&nbsp; Highlighted rows = In The Money &nbsp;|&nbsp; Greeks calculated via Black-Scholes</div>
+  `;
+  document.getElementById('optionsResults').style.display = 'block';
+}
+
+function showOptTab(tab, btn) {
+  document.querySelectorAll('#optionsResults .mf-tab').forEach(t => t.classList.remove('active'));
+  ['calls','puts'].forEach(t => { const el = document.getElementById('opt-'+t); if(el) el.style.display='none'; });
+  if (btn) btn.classList.add('active');
+  const el = document.getElementById('opt-' + tab);
+  if (el) el.style.display = 'block';
 }
 
 async function downloadPortfolioExcel() {

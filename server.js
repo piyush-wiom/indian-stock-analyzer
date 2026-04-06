@@ -980,6 +980,284 @@ app.get('/api/mf/:code', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
+//  Nifty 50 ticker list
+// ─────────────────────────────────────────────
+const NIFTY50 = [
+  'RELIANCE.NS','TCS.NS','HDFCBANK.NS','ICICIBANK.NS','INFY.NS',
+  'HINDUNILVR.NS','ITC.NS','SBIN.NS','BHARTIARTL.NS','KOTAKBANK.NS',
+  'LT.NS','AXISBANK.NS','ASIANPAINT.NS','MARUTI.NS','HCLTECH.NS',
+  'SUNPHARMA.NS','TITAN.NS','BAJFINANCE.NS','WIPRO.NS','ULTRACEMCO.NS',
+  'NESTLEIND.NS','POWERGRID.NS','NTPC.NS','TECHM.NS','TATAMOTORS.NS',
+  'TATASTEEL.NS','JSWSTEEL.NS','ADANIENT.NS','ADANIPORTS.NS','ONGC.NS',
+  'COALINDIA.NS','BAJAJFINSV.NS','DIVISLAB.NS','CIPLA.NS','DRREDDY.NS',
+  'EICHERMOT.NS','HEROMOTOCO.NS','BAJAJ-AUTO.NS','BRITANNIA.NS','GRASIM.NS',
+  'INDUSINDBK.NS','M&M.NS','TATACONSUM.NS','APOLLOHOSP.NS','BPCL.NS',
+  'HINDALCO.NS','VEDL.NS','SBILIFE.NS','HDFCLIFE.NS','SHREECEM.NS'
+];
+
+// ─────────────────────────────────────────────
+//  ATR helper
+// ─────────────────────────────────────────────
+function calcATR(highs, lows, closes, period = 14) {
+  const trs = closes.map((c, i) => {
+    if (i === 0) return highs[i] - lows[i];
+    return Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i-1]), Math.abs(lows[i] - closes[i-1]));
+  });
+  const recent = trs.slice(-period);
+  return recent.reduce((a, b) => a + b, 0) / recent.length;
+}
+
+// ─────────────────────────────────────────────
+//  Black-Scholes Greeks
+// ─────────────────────────────────────────────
+function erf(x) {
+  const t = 1 / (1 + 0.3275911 * Math.abs(x));
+  const poly = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
+  const result = 1 - poly * Math.exp(-x * x);
+  return x >= 0 ? result : -result;
+}
+function normCDF(x) { return 0.5 * (1 + erf(x / Math.sqrt(2))); }
+function normPDF(x) { return Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI); }
+
+function blackScholes(S, K, T, r, sigma, type) {
+  if (T <= 0 || sigma <= 0) return { price: 0, delta: 0, gamma: 0, theta: 0, vega: 0 };
+  const d1 = (Math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * Math.sqrt(T));
+  const d2 = d1 - sigma * Math.sqrt(T);
+  const nd1 = normPDF(d1);
+  if (type === 'call') {
+    return {
+      price:  +(S * normCDF(d1) - K * Math.exp(-r * T) * normCDF(d2)).toFixed(2),
+      delta:  +normCDF(d1).toFixed(4),
+      gamma:  +(nd1 / (S * sigma * Math.sqrt(T))).toFixed(6),
+      theta:  +(( -(S * nd1 * sigma) / (2 * Math.sqrt(T)) - r * K * Math.exp(-r * T) * normCDF(d2)) / 365).toFixed(4),
+      vega:   +(S * nd1 * Math.sqrt(T) / 100).toFixed(4),
+    };
+  } else {
+    return {
+      price:  +(K * Math.exp(-r * T) * normCDF(-d2) - S * normCDF(-d1)).toFixed(2),
+      delta:  +(normCDF(d1) - 1).toFixed(4),
+      gamma:  +(nd1 / (S * sigma * Math.sqrt(T))).toFixed(6),
+      theta:  +(( -(S * nd1 * sigma) / (2 * Math.sqrt(T)) + r * K * Math.exp(-r * T) * normCDF(-d2)) / 365).toFixed(4),
+      vega:   +(S * nd1 * Math.sqrt(T) / 100).toFixed(4),
+    };
+  }
+}
+
+// ─────────────────────────────────────────────
+//  Route: Daily Top Picks (Nifty 50 scan)
+// ─────────────────────────────────────────────
+app.get('/api/daily-picks', async (req, res) => {
+  const BATCH = 8;
+  const results = [];
+
+  for (let i = 0; i < NIFTY50.length; i += BATCH) {
+    const batch = NIFTY50.slice(i, i + BATCH);
+    const settled = await Promise.allSettled(batch.map(async (ticker) => {
+      const period1 = new Date(Date.now() - 400 * 86400000).toISOString().split('T')[0];
+      const [quote, hist] = await Promise.all([
+        yf.quote(ticker, {}, { validateResult: false }).catch(() => null),
+        yf.chart(ticker, { period1, interval: '1d' }, { validateResult: false }).catch(() => null),
+      ]);
+      if (!quote || !hist) return null;
+      const quotes = (hist.quotes || []).filter(q => q.close != null);
+      if (quotes.length < 50) return null;
+
+      const closes = quotes.map(q => q.close);
+      const highs  = quotes.map(q => q.high || q.close);
+      const lows   = quotes.map(q => q.low  || q.close);
+      const vols   = quotes.map(q => q.volume || 0);
+
+      const ind = analyse(closes, vols);
+      const atr = calcATR(highs, lows, closes);
+      const cp  = closes[closes.length - 1];
+      const stopLoss   = +(cp - 1.5 * atr).toFixed(2);
+      const target     = +(cp + 3.0 * atr).toFixed(2);
+      const riskReward = '1:2';
+      const holdingPeriod = ind.totalScore >= 3 ? 'Positional (2–4 weeks)' : 'Swing (3–7 days)';
+
+      return {
+        ticker: ticker.replace('.NS','').replace('.BO',''),
+        fullTicker: ticker,
+        company: quote.longName || quote.shortName || ticker,
+        price: +cp.toFixed(2),
+        score: ind.totalScore,
+        recommendation: ind.recommendation,
+        confidence: ind.confidence,
+        atr: +atr.toFixed(2),
+        stopLoss,
+        target,
+        riskReward,
+        holdingPeriod,
+        rsiValue: ind.rsi.value,
+        macdSignal: ind.macd.score === 1 ? 'Bullish' : 'Bearish',
+        maCross: ind.movingAverages.score === 1 ? 'Golden' : ind.movingAverages.score === -1 ? 'Death' : 'Neutral',
+      };
+    }));
+    settled.forEach(r => { if (r.status === 'fulfilled' && r.value) results.push(r.value); });
+  }
+
+  const picks = results
+    .filter(r => r.score >= 1.0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 12);
+
+  res.json({ picks, scanned: results.length, timestamp: new Date().toISOString() });
+});
+
+// ─────────────────────────────────────────────
+//  Route: Company Financials
+// ─────────────────────────────────────────────
+app.get('/api/financials/:ticker', async (req, res) => {
+  const fullTicker = resolveTicker(req.params.ticker);
+  try {
+    const summary = await yf.quoteSummary(fullTicker, {
+      modules: ['incomeStatementHistory', 'balanceSheetHistory', 'cashflowStatementHistory', 'financialData', 'defaultKeyStatistics'],
+    }, { validateResult: false });
+
+    const fmtCr = v => v ? +(v / 1e7).toFixed(2) : null; // to Crores
+    const fmtPct = v => v ? +(v * 100).toFixed(2) : null;
+
+    const income = (summary.incomeStatementHistory?.incomeStatementHistory || []).map(s => ({
+      date: s.endDate ? new Date(s.endDate).getFullYear() : null,
+      revenue:     fmtCr(s.totalRevenue),
+      grossProfit: fmtCr(s.grossProfit),
+      ebitda:      fmtCr(s.ebitda),
+      netIncome:   fmtCr(s.netIncome),
+      eps:         s.basicEps != null ? +s.basicEps.toFixed(2) : null,
+    }));
+
+    const balance = (summary.balanceSheetHistory?.balanceSheetStatements || []).map(s => ({
+      date:         s.endDate ? new Date(s.endDate).getFullYear() : null,
+      totalAssets:  fmtCr(s.totalAssets),
+      totalDebt:    fmtCr(s.totalDebt || s.longTermDebt),
+      cash:         fmtCr(s.cash || s.cashAndCashEquivalents),
+      bookValue:    fmtCr(s.totalStockholderEquity),
+      currentRatio: s.currentRatio != null ? +s.currentRatio.toFixed(2) : null,
+    }));
+
+    const cashflow = (summary.cashflowStatementHistory?.cashflowStatements || []).map(s => ({
+      date:          s.endDate ? new Date(s.endDate).getFullYear() : null,
+      operatingCF:   fmtCr(s.totalCashFromOperatingActivities),
+      investingCF:   fmtCr(s.totalCashflowsFromInvestingActivities),
+      financingCF:   fmtCr(s.totalCashFromFinancingActivities),
+      freeCF:        s.totalCashFromOperatingActivities && s.capitalExpenditures
+                       ? fmtCr(s.totalCashFromOperatingActivities + s.capitalExpenditures)
+                       : null,
+    }));
+
+    const fd = summary.financialData || {};
+    const ks = summary.defaultKeyStatistics || {};
+    const ratios = {
+      peRatio:       fd.forwardPE ? +fd.forwardPE.toFixed(2) : null,
+      pbRatio:       ks.priceToBook ? +ks.priceToBook.toFixed(2) : null,
+      roe:           fmtPct(fd.returnOnEquity),
+      roa:           fmtPct(fd.returnOnAssets),
+      debtToEquity:  fd.debtToEquity ? +fd.debtToEquity.toFixed(2) : null,
+      revenueGrowth: fmtPct(fd.revenueGrowth),
+      earningsGrowth:fmtPct(fd.earningsGrowth),
+      operatingMargin: fmtPct(fd.operatingMargins),
+      profitMargin:  fmtPct(fd.profitMargins),
+      currentRatio:  fd.currentRatio ? +fd.currentRatio.toFixed(2) : null,
+      quickRatio:    fd.quickRatio ? +fd.quickRatio.toFixed(2) : null,
+      freeCashflow:  fmtCr(fd.freeCashflow),
+    };
+
+    res.json({ ticker: req.params.ticker, income, balance, cashflow, ratios });
+  } catch (e) {
+    res.status(500).json({ error: 'Financial data not available for this stock.' });
+  }
+});
+
+// ─────────────────────────────────────────────
+//  Route: Options Chain + Greeks
+// ─────────────────────────────────────────────
+app.get('/api/options/:ticker', async (req, res) => {
+  const fullTicker = resolveTicker(req.params.ticker);
+  const expiry = req.query.expiry || null;
+  const R = 0.065; // India risk-free rate ~6.5%
+
+  try {
+    const [quoteData, optData] = await Promise.all([
+      yf.quote(fullTicker, {}, { validateResult: false }).catch(() => null),
+      expiry
+        ? yf.options(fullTicker, { date: new Date(expiry) }, { validateResult: false }).catch(() => null)
+        : yf.options(fullTicker, {}, { validateResult: false }).catch(() => null),
+    ]);
+
+    if (!optData) return res.status(404).json({ error: 'Options data not available for this stock.' });
+
+    const spot = quoteData?.regularMarketPrice || quoteData?.ask || 0;
+    const expiries = optData.expirationDates || [];
+    const selectedExpiry = expiry || (expiries[0] ? new Date(expiries[0] * 1000).toISOString().split('T')[0] : null);
+    const T = selectedExpiry ? Math.max((new Date(selectedExpiry) - Date.now()) / (365 * 86400000), 0.001) : 0.05;
+
+    const processContracts = (contracts = [], type) =>
+      contracts.map(c => {
+        const iv = c.impliedVolatility || 0.3;
+        const K  = c.strike;
+        const greeks = spot > 0 && K > 0 ? blackScholes(spot, K, T, R, iv, type) : {};
+        const isATM = Math.abs(K - spot) <= spot * 0.02;
+        return {
+          strike:     K,
+          type,
+          lastPrice:  c.lastPrice,
+          bid:        c.bid,
+          ask:        c.ask,
+          volume:     c.volume,
+          openInterest: c.openInterest,
+          iv:         +(iv * 100).toFixed(1),
+          delta:      greeks.delta,
+          gamma:      greeks.gamma,
+          theta:      greeks.theta,
+          vega:       greeks.vega,
+          isATM,
+          inTheMoney: c.inTheMoney,
+          expiry:     c.expiration ? new Date(c.expiration * 1000).toISOString().split('T')[0] : selectedExpiry,
+        };
+      });
+
+    const calls = processContracts(optData.options?.[0]?.calls, 'call');
+    const puts  = processContracts(optData.options?.[0]?.puts,  'put');
+
+    // Strategy suggestion
+    const atmCall = calls.find(c => c.isATM) || calls[Math.floor(calls.length / 2)];
+    const avgIV = atmCall?.iv || 30;
+    let strategy = '', strategyReason = '';
+    if (!quoteData) {
+      strategy = 'N/A'; strategyReason = 'Could not determine underlying trend.';
+    } else {
+      // Quick momentum check from price vs 52w range
+      const pct52 = quoteData.fiftyTwoWeekHigh && quoteData.fiftyTwoWeekLow
+        ? (spot - quoteData.fiftyTwoWeekLow) / (quoteData.fiftyTwoWeekHigh - quoteData.fiftyTwoWeekLow) * 100 : 50;
+      const bullish = pct52 > 55;
+      const bearish = pct52 < 40;
+      const highIV  = avgIV > 35;
+
+      if (bullish && !highIV)  { strategy = '📈 Buy Call'; strategyReason = `Bullish trend (${pct52.toFixed(0)}% of 52w range) + Low IV (${avgIV}%) → Directional call buy is cost-effective.`; }
+      else if (bullish && highIV) { strategy = '📊 Bull Call Spread'; strategyReason = `Bullish but IV is high (${avgIV}%) → Spread reduces premium cost. Buy ATM call, sell OTM call.`; }
+      else if (bearish && !highIV) { strategy = '📉 Buy Put'; strategyReason = `Bearish trend (${pct52.toFixed(0)}% of 52w range) + Low IV → Directional put buy is cost-effective.`; }
+      else if (bearish && highIV)  { strategy = '🐻 Bear Put Spread'; strategyReason = `Bearish + High IV → Spread reduces cost. Buy ATM put, sell OTM put.`; }
+      else if (highIV)  { strategy = '🎯 Short Strangle'; strategyReason = `Sideways range with high IV (${avgIV}%) → Sell OTM call + OTM put. Profit if stock stays in range.`; }
+      else { strategy = '⏸️ Wait & Watch'; strategyReason = `No strong directional signal. IV (${avgIV}%) is moderate. Wait for clearer trend.`; }
+    }
+
+    res.json({
+      ticker: req.params.ticker,
+      spot,
+      expiries: expiries.map(e => new Date(e * 1000).toISOString().split('T')[0]),
+      selectedExpiry,
+      calls: calls.slice(0, 30),
+      puts:  puts.slice(0, 30),
+      strategy,
+      strategyReason,
+      avgIV,
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Options data not available: ' + e.message });
+  }
+});
+
+// ─────────────────────────────────────────────
 //  Global error handler
 // ─────────────────────────────────────────────
 app.use((err, req, res, next) => {
