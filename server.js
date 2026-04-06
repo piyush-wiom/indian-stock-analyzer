@@ -74,7 +74,7 @@ const ALIASES = {
   'lic':'LICI.NS','lici':'LICI.NS',
   'hdfc life':'HDFCLIFE.NS','hdfclife':'HDFCLIFE.NS',
   'sbi life':'SBILIFE.NS','sbilife':'SBILIFE.NS',
-  'nifty':'%5ENSEI','sensex':'%5EBSESN',
+  'nifty':'^NSEI','banknifty':'^NSEBANK','bank nifty':'^NSEBANK','sensex':'^BSESN',
 };
 
 function resolveTicker(input) {
@@ -939,13 +939,20 @@ app.post('/api/portfolio/download', async (req, res) => {
 // ─────────────────────────────────────────────
 //  Route: Mutual Fund Search
 // ─────────────────────────────────────────────
-function fetchJSON(url) {
-  return new Promise((resolve) => {
-    https.get(url, { headers: { 'User-Agent': 'StockAnalyzer/1.0' } }, resp => {
+function fetchJSON(url, opts = {}) {
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(url);
+    const options = {
+      hostname: parsedUrl.hostname,
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: 'GET',
+      headers: { 'User-Agent': 'StockAnalyzer/1.0', ...(opts.headers || {}) },
+    };
+    https.get(options, resp => {
       let body = '';
       resp.on('data', chunk => { body += chunk; });
       resp.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve(null); } });
-    }).on('error', () => resolve(null));
+    }).on('error', e => reject(e));
   });
 }
 
@@ -1169,13 +1176,89 @@ app.get('/api/financials/:ticker', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
+//  NSE Option Chain helper (for NIFTY / BANKNIFTY)
+// ─────────────────────────────────────────────
+async function fetchNSEOptionChain(symbol) {
+  // symbol = 'NIFTY' or 'BANKNIFTY'
+  const baseHeaders = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36',
+    'Accept': 'application/json',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Referer': 'https://www.nseindia.com/option-chain',
+    'Connection': 'keep-alive',
+  };
+  // Step 1: get session cookie
+  await fetchJSON('https://www.nseindia.com', {
+    headers: { ...baseHeaders, Accept: 'text/html' },
+  }).catch(() => {});
+  // Step 2: fetch option chain
+  const url = `https://www.nseindia.com/api/option-chain-indices?symbol=${encodeURIComponent(symbol)}`;
+  const data = await fetchJSON(url, { headers: baseHeaders });
+  return data;
+}
+
+// ─────────────────────────────────────────────
 //  Route: Options Chain + Greeks
 // ─────────────────────────────────────────────
+const NSE_INDEX_SYMBOLS = { '^NSEI': 'NIFTY', '^NSEBANK': 'BANKNIFTY' };
+
 app.get('/api/options/:ticker', async (req, res) => {
   const fullTicker = resolveTicker(req.params.ticker);
   const expiry = req.query.expiry || null;
-  const R = 0.065; // India risk-free rate ~6.5%
+  const R = 0.065;
 
+  // ── NSE index options (NIFTY / BANKNIFTY) ──
+  const nseSymbol = NSE_INDEX_SYMBOLS[fullTicker];
+  if (nseSymbol) {
+    try {
+      const raw = await fetchNSEOptionChain(nseSymbol);
+      if (!raw || !raw.records) return res.status(404).json({ error: 'NSE option chain unavailable. Try again in a moment.' });
+
+      const spot = raw.records.underlyingValue || 0;
+      // All unique expiry dates from NSE
+      const allExpiries = [...new Set(raw.records.data.map(r => r.expiryDate))].sort((a, b) => new Date(a) - new Date(b));
+      const selectedExpiry = expiry || allExpiries[0];
+      const T = selectedExpiry ? Math.max((new Date(selectedExpiry) - Date.now()) / (365 * 86400000), 0.001) : 0.05;
+
+      const rows = raw.records.data.filter(r => r.expiryDate === selectedExpiry);
+      const calls = [], puts = [];
+
+      rows.forEach(r => {
+        const K = r.strikePrice;
+        const isATM = Math.abs(K - spot) <= spot * 0.01;
+        if (r.CE) {
+          const iv = (r.CE.impliedVolatility || 20) / 100;
+          const greeks = blackScholes(spot, K, T, R, iv, 'call');
+          calls.push({ strike: K, type: 'call', lastPrice: r.CE.lastPrice, bid: r.CE.bidprice, ask: r.CE.askPrice,
+            volume: r.CE.totalTradedVolume, openInterest: r.CE.openInterest, iv: +(iv * 100).toFixed(1),
+            delta: greeks.delta, gamma: greeks.gamma, theta: greeks.theta, vega: greeks.vega,
+            isATM, inTheMoney: K < spot, expiry: selectedExpiry });
+        }
+        if (r.PE) {
+          const iv = (r.PE.impliedVolatility || 20) / 100;
+          const greeks = blackScholes(spot, K, T, R, iv, 'put');
+          puts.push({ strike: K, type: 'put', lastPrice: r.PE.lastPrice, bid: r.PE.bidprice, ask: r.PE.askPrice,
+            volume: r.PE.totalTradedVolume, openInterest: r.PE.openInterest, iv: +(iv * 100).toFixed(1),
+            delta: greeks.delta, gamma: greeks.gamma, theta: greeks.theta, vega: greeks.vega,
+            isATM, inTheMoney: K > spot, expiry: selectedExpiry });
+        }
+      });
+
+      const atmCall = calls.find(c => c.isATM) || calls[Math.floor(calls.length / 2)];
+      const avgIV = atmCall?.iv || 20;
+      const highIV = avgIV > 20;
+      let strategy, strategyReason;
+      if      (!highIV) { strategy = '📈 Buy Call/Put'; strategyReason = `IV is low (${avgIV}%). Options are cheap — directional buying is cost-effective.`; }
+      else if (highIV)  { strategy = '🎯 Sell Strangle / Iron Condor'; strategyReason = `IV is elevated (${avgIV}%). Selling premium (strangle/condor) benefits from IV crush.`; }
+      else              { strategy = '⏸️ Wait & Watch'; strategyReason = `No clear signal. Wait for trend confirmation.`; }
+
+      return res.json({ ticker: nseSymbol, spot, expiries: allExpiries, selectedExpiry, calls, puts, strategy, strategyReason, avgIV, source: 'NSE' });
+    } catch (e) {
+      return res.status(500).json({ error: 'NSE option chain failed: ' + e.message });
+    }
+  }
+
+  // ── Stock options via Yahoo Finance ──
   try {
     const [quoteData, optData] = await Promise.all([
       yf.quote(fullTicker, {}, { validateResult: false }).catch(() => null),
@@ -1184,7 +1267,7 @@ app.get('/api/options/:ticker', async (req, res) => {
         : yf.options(fullTicker, {}, { validateResult: false }).catch(() => null),
     ]);
 
-    if (!optData) return res.status(404).json({ error: 'Options data not available for this stock.' });
+    if (!optData) return res.status(404).json({ error: 'Options data not available for this stock. Note: NSE stock F&O data may be limited on Yahoo Finance.' });
 
     const spot = quoteData?.regularMarketPrice || quoteData?.ask || 0;
     const expiries = optData.expirationDates || [];
@@ -1198,59 +1281,39 @@ app.get('/api/options/:ticker', async (req, res) => {
         const greeks = spot > 0 && K > 0 ? blackScholes(spot, K, T, R, iv, type) : {};
         const isATM = Math.abs(K - spot) <= spot * 0.02;
         return {
-          strike:     K,
-          type,
-          lastPrice:  c.lastPrice,
-          bid:        c.bid,
-          ask:        c.ask,
-          volume:     c.volume,
-          openInterest: c.openInterest,
-          iv:         +(iv * 100).toFixed(1),
-          delta:      greeks.delta,
-          gamma:      greeks.gamma,
-          theta:      greeks.theta,
-          vega:       greeks.vega,
-          isATM,
-          inTheMoney: c.inTheMoney,
-          expiry:     c.expiration ? new Date(c.expiration * 1000).toISOString().split('T')[0] : selectedExpiry,
+          strike: K, type, lastPrice: c.lastPrice, bid: c.bid, ask: c.ask,
+          volume: c.volume, openInterest: c.openInterest, iv: +(iv * 100).toFixed(1),
+          delta: greeks.delta, gamma: greeks.gamma, theta: greeks.theta, vega: greeks.vega,
+          isATM, inTheMoney: c.inTheMoney,
+          expiry: c.expiration ? new Date(c.expiration * 1000).toISOString().split('T')[0] : selectedExpiry,
         };
       });
 
     const calls = processContracts(optData.options?.[0]?.calls, 'call');
     const puts  = processContracts(optData.options?.[0]?.puts,  'put');
 
-    // Strategy suggestion
     const atmCall = calls.find(c => c.isATM) || calls[Math.floor(calls.length / 2)];
     const avgIV = atmCall?.iv || 30;
     let strategy = '', strategyReason = '';
     if (!quoteData) {
       strategy = 'N/A'; strategyReason = 'Could not determine underlying trend.';
     } else {
-      // Quick momentum check from price vs 52w range
       const pct52 = quoteData.fiftyTwoWeekHigh && quoteData.fiftyTwoWeekLow
         ? (spot - quoteData.fiftyTwoWeekLow) / (quoteData.fiftyTwoWeekHigh - quoteData.fiftyTwoWeekLow) * 100 : 50;
-      const bullish = pct52 > 55;
-      const bearish = pct52 < 40;
-      const highIV  = avgIV > 35;
-
-      if (bullish && !highIV)  { strategy = '📈 Buy Call'; strategyReason = `Bullish trend (${pct52.toFixed(0)}% of 52w range) + Low IV (${avgIV}%) → Directional call buy is cost-effective.`; }
-      else if (bullish && highIV) { strategy = '📊 Bull Call Spread'; strategyReason = `Bullish but IV is high (${avgIV}%) → Spread reduces premium cost. Buy ATM call, sell OTM call.`; }
-      else if (bearish && !highIV) { strategy = '📉 Buy Put'; strategyReason = `Bearish trend (${pct52.toFixed(0)}% of 52w range) + Low IV → Directional put buy is cost-effective.`; }
-      else if (bearish && highIV)  { strategy = '🐻 Bear Put Spread'; strategyReason = `Bearish + High IV → Spread reduces cost. Buy ATM put, sell OTM put.`; }
-      else if (highIV)  { strategy = '🎯 Short Strangle'; strategyReason = `Sideways range with high IV (${avgIV}%) → Sell OTM call + OTM put. Profit if stock stays in range.`; }
-      else { strategy = '⏸️ Wait & Watch'; strategyReason = `No strong directional signal. IV (${avgIV}%) is moderate. Wait for clearer trend.`; }
+      const bullish = pct52 > 55, bearish = pct52 < 40, highIV = avgIV > 35;
+      if (bullish && !highIV)      { strategy = '📈 Buy Call';         strategyReason = `Bullish (${pct52.toFixed(0)}% of 52w) + Low IV (${avgIV}%) → directional call.`; }
+      else if (bullish && highIV)  { strategy = '📊 Bull Call Spread'; strategyReason = `Bullish + High IV (${avgIV}%) → spread reduces cost.`; }
+      else if (bearish && !highIV) { strategy = '📉 Buy Put';          strategyReason = `Bearish (${pct52.toFixed(0)}% of 52w) + Low IV → directional put.`; }
+      else if (bearish && highIV)  { strategy = '🐻 Bear Put Spread';  strategyReason = `Bearish + High IV → spread reduces cost.`; }
+      else if (highIV)             { strategy = '🎯 Short Strangle';   strategyReason = `Sideways + High IV (${avgIV}%) → sell OTM call + put.`; }
+      else                         { strategy = '⏸️ Wait & Watch';     strategyReason = `No strong signal. IV moderate (${avgIV}%).`; }
     }
 
     res.json({
-      ticker: req.params.ticker,
-      spot,
+      ticker: req.params.ticker, spot,
       expiries: expiries.map(e => new Date(e * 1000).toISOString().split('T')[0]),
-      selectedExpiry,
-      calls: calls.slice(0, 30),
-      puts:  puts.slice(0, 30),
-      strategy,
-      strategyReason,
-      avgIV,
+      selectedExpiry, calls: calls.slice(0, 40), puts: puts.slice(0, 40),
+      strategy, strategyReason, avgIV, source: 'Yahoo Finance',
     });
   } catch (e) {
     res.status(500).json({ error: 'Options data not available: ' + e.message });
