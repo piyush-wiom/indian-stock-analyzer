@@ -1176,36 +1176,164 @@ app.get('/api/financials/:ticker', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
-//  Route: Options Chain + Greeks
+//  Helpers for Index Option Signal
 // ─────────────────────────────────────────────
 const NSE_INDEX_SYMBOLS = { '^NSEI': 'NIFTY', '^NSEBANK': 'BANKNIFTY' };
 
+// Calculate upcoming expiry dates without NSE API
+// NIFTY: every Thursday | BANKNIFTY: every Wednesday
+function getNearestExpiries(symbol, count = 6) {
+  const expiryDay = symbol === 'BANKNIFTY' ? 3 : 4; // 3=Wed, 4=Thu
+  const expiries = [];
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  let checked = 0;
+  while (expiries.length < count && checked < 90) {
+    d.setDate(d.getDate() + 1);
+    checked++;
+    if (d.getDay() === expiryDay) {
+      expiries.push(d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '-'));
+    }
+  }
+  return expiries;
+}
+
+function parseExpiryDate(label) {
+  // '07-Apr-2025' → Date
+  return new Date(label.replace(/-/g, ' '));
+}
+
+// ─────────────────────────────────────────────
+//  Route: Options Chain + Greeks
+// ─────────────────────────────────────────────
 app.get('/api/options/:ticker', async (req, res) => {
   const fullTicker = resolveTicker(req.params.ticker);
-  const expiry = req.query.expiry || null;
+  const expiry = req.query.expiry || null; // e.g. '07-Apr-2025'
   const R = 0.065;
 
   // ── NSE index options (NIFTY / BANKNIFTY) ──
-  // NSE blocks all server-side API calls with Cloudflare/JS cookie protection.
-  // Return spot price + direct links so user can check on official sources.
+  // NSE blocks server-side API calls. We compute everything from Yahoo Finance:
+  // spot + India VIX + 60d OHLCV → technical analysis → Black-Scholes signal.
   const nseSymbol = NSE_INDEX_SYMBOLS[fullTicker];
   if (nseSymbol) {
-    const quoteData = await yf.quote(fullTicker, {}, { validateResult: false }).catch(() => null);
-    const spot = quoteData?.regularMarketPrice || 0;
-    const change = quoteData?.regularMarketChange || 0;
-    const changePct = quoteData?.regularMarketChangePercent || 0;
-    return res.status(200).json({
-      nseIndex: true,
-      symbol: nseSymbol,
-      spot: +spot.toFixed(2),
-      change: +change.toFixed(2),
-      changePct: +changePct.toFixed(2),
-      links: [
-        { label: 'NSE Option Chain (Official)', url: `https://www.nseindia.com/option-chain`, note: 'Select ' + nseSymbol + ' from dropdown' },
-        { label: 'Sensibull Option Chain', url: `https://sensibull.com/nifty`, note: 'Free, real-time Greeks' },
-        { label: 'Opstra (OI Analysis)', url: `https://opstra.definedge.com/`, note: 'Free OI charts + strategy builder' },
-      ],
-    });
+    try {
+      const sixtyDaysAgo = new Date(Date.now() - 60 * 86400000).toISOString().split('T')[0];
+      const [quoteData, vixData, chartData] = await Promise.all([
+        yf.quote(fullTicker, {}, { validateResult: false }).catch(() => null),
+        yf.quote('^INDIAVIX', {}, { validateResult: false }).catch(() => null),
+        yf.chart(fullTicker, { period1: sixtyDaysAgo, interval: '1d' }, { validateResult: false }).catch(() => null),
+      ]);
+
+      const spot = quoteData?.regularMarketPrice || 0;
+      const change = quoteData?.regularMarketChange || 0;
+      const changePct = quoteData?.regularMarketChangePercent || 0;
+      const vix = vixData?.regularMarketPrice || 15;
+      const sigma = vix / 100; // e.g. VIX 14 → IV 14%
+
+      // Technical analysis from historical data
+      const quotes = chartData?.quotes || [];
+      const closes  = quotes.map(q => q.close).filter(Boolean);
+      const volumes = quotes.map(q => q.volume || 0);
+      const ind = closes.length >= 14 ? analyse(closes, volumes) : null;
+      const score = ind?.totalScore || 0;
+
+      // Direction
+      let direction, dirEmoji, dirColor;
+      if      (score >= 2)  { direction = 'Bullish';  dirEmoji = '📈'; dirColor = '#3B6D11'; }
+      else if (score <= -2) { direction = 'Bearish';  dirEmoji = '📉'; dirColor = '#A32D2D'; }
+      else                  { direction = 'Neutral';  dirEmoji = '↔️'; dirColor = '#854F0B'; }
+
+      // Strike rounding
+      const step = nseSymbol === 'BANKNIFTY' ? 100 : 50;
+      const atmStrike = Math.round(spot / step) * step;
+
+      // Expiries
+      const expiries = getNearestExpiries(nseSymbol);
+      const selectedExpiry = expiry || expiries[0];
+      const expiryDate = parseExpiryDate(selectedExpiry);
+      const T = Math.max((expiryDate - Date.now()) / (365 * 86400000), 0.001);
+
+      // Recommended option
+      let recType, recStrike;
+      if (direction === 'Bullish') {
+        recType = 'CE'; recStrike = atmStrike;
+      } else if (direction === 'Bearish') {
+        recType = 'PE'; recStrike = atmStrike;
+      } else {
+        recType = 'CE+PE'; recStrike = atmStrike; // strangle
+      }
+
+      // Chain: ATM ± 5 strikes
+      const strikes = [];
+      for (let i = -5; i <= 5; i++) strikes.push(atmStrike + i * step);
+
+      const chain = strikes.map(K => {
+        const call = blackScholes(spot, K, T, R, sigma, 'call');
+        const put  = blackScholes(spot, K, T, R, sigma, 'put');
+        return {
+          strike: K,
+          callPrice:  call.price  != null ? +call.price.toFixed(2)  : null,
+          putPrice:   put.price   != null ? +put.price.toFixed(2)   : null,
+          callDelta:  call.delta  != null ? +call.delta.toFixed(3)  : null,
+          putDelta:   put.delta   != null ? +put.delta.toFixed(3)   : null,
+          gamma:      call.gamma  != null ? +call.gamma.toFixed(6)  : null,
+          callTheta:  call.theta  != null ? +call.theta.toFixed(2)  : null,
+          putTheta:   put.theta   != null ? +put.theta.toFixed(2)   : null,
+          vega:       call.vega   != null ? +call.vega.toFixed(2)   : null,
+          iv:         +(sigma * 100).toFixed(1),
+          isATM: K === atmStrike,
+        };
+      });
+
+      // Entry / SL / Targets from B-S price
+      const atmRow = chain.find(c => c.isATM);
+      const rawEntry = recType === 'PE' ? atmRow?.putPrice : atmRow?.callPrice;
+      const entryLow  = rawEntry ? +rawEntry.toFixed(0) : 0;
+      const entryHigh = rawEntry ? +(rawEntry * 1.1).toFixed(0) : 0;
+      const stopLoss  = rawEntry ? +(rawEntry * 0.40).toFixed(0) : 0;
+      const target1   = rawEntry ? +(rawEntry * 1.80).toFixed(0) : 0;
+      const target2   = rawEntry ? +(rawEntry * 2.50).toFixed(0) : 0;
+      const holdingPeriod = score >= 3 ? 'Hold till expiry' : score >= 1 || score <= -1 ? '1–2 days' : 'Intraday only';
+
+      // Signal pills
+      const signals = [];
+      if (ind) {
+        signals.push(ind.rsi.score >= 1 ? `✅ RSI ${ind.rsi.value} — Oversold (Bullish)` : ind.rsi.score <= -1 ? `⚠️ RSI ${ind.rsi.value} — Overbought (Bearish)` : `➖ RSI ${ind.rsi.value} — Neutral`);
+        signals.push(ind.macd.score === 1 ? '✅ MACD Bullish crossover' : '⚠️ MACD Bearish signal');
+        if (ind.movingAverages.score !== 0) signals.push(ind.movingAverages.crossType === 'golden' ? '✅ Golden Cross — Uptrend' : '⚠️ Death Cross — Downtrend');
+        if (ind.bollinger.score === 1) signals.push('✅ Price near lower Bollinger — Bounce possible');
+        if (ind.bollinger.score === -1) signals.push('⚠️ Price near upper Bollinger — Overbought');
+        if (ind.volume.score === 0.5) signals.push('✅ Volume spike — Momentum confirmed');
+      }
+
+      return res.json({
+        nseIndex:       true,
+        symbol:         nseSymbol,
+        spot:           +spot.toFixed(2),
+        change:         +change.toFixed(2),
+        changePct:      +changePct.toFixed(2),
+        vix:            +vix.toFixed(2),
+        direction, dirEmoji, dirColor,
+        score:          +score.toFixed(2),
+        confidence:     ind?.confidence || 0,
+        recommendation: ind?.recommendation || 'Hold',
+        recType, recStrike,
+        entryLow, entryHigh,
+        stopLoss, target1, target2,
+        holdingPeriod,
+        expiries,
+        selectedExpiry,
+        chain,
+        signals,
+        links: [
+          { label: '🔗 NSE Option Chain', url: 'https://www.nseindia.com/option-chain', note: 'Select ' + nseSymbol },
+          { label: '🔗 Sensibull', url: 'https://sensibull.com/nifty', note: 'Real-time Greeks' },
+          { label: '🔗 Opstra', url: 'https://opstra.definedge.com/', note: 'OI Analysis' },
+        ],
+      });
+    } catch (e) {
+      return res.status(500).json({ error: 'Index signal failed: ' + e.message });
+    }
   }
 
   // ── Stock options via Yahoo Finance ──

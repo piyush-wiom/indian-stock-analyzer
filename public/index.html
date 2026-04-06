@@ -1883,32 +1883,139 @@ async function loadOptions() {
 
 function renderNseCard(data) {
   const sign = data.change >= 0 ? '+' : '';
-  const color = data.change >= 0 ? '#3B6D11' : '#A32D2D';
+  const chgColor = data.change >= 0 ? '#3B6D11' : '#A32D2D';
+  const vixNote = data.vix < 13 ? 'Very Low — Options cheap' : data.vix < 18 ? 'Low — Good for buying' : data.vix < 25 ? 'Moderate' : 'High — Sell premium';
+  const isNeutral = data.direction === 'Neutral';
+  const isBull = data.direction === 'Bullish';
+  const sigBg = isBull ? '#EAF3DE' : isNeutral ? '#FAEEDA' : '#FCEBEB';
+  const sigBorder = isBull ? '#639922' : isNeutral ? '#EF9F27' : '#E24B4A';
+  const sigTextColor = isBull ? '#3B6D11' : isNeutral ? '#854F0B' : '#A32D2D';
+
+  // Build expiry selector
+  const expiryOpts = (data.expiries || []).map(e =>
+    `<option value="${e}" ${e === data.selectedExpiry ? 'selected' : ''}>${e}</option>`).join('');
+
+  // Chain table rows
+  const chainRows = (data.chain || []).map(r => `
+    <tr style="background:${r.isATM ? 'var(--blue-lt)' : 'transparent'};font-weight:${r.isATM ? '700' : '400'};">
+      <td style="color:${r.isATM ? 'var(--blue)' : 'inherit'};">${r.strike}${r.isATM ? ' ★' : ''}</td>
+      <td style="color:#3B6D11;">₹${r.callPrice ?? '—'}</td>
+      <td style="color:#A32D2D;">₹${r.putPrice ?? '—'}</td>
+      <td>${r.callDelta ?? '—'}</td>
+      <td>${r.putDelta ?? '—'}</td>
+      <td>${r.callTheta ?? '—'}</td>
+      <td>${r.vega ?? '—'}</td>
+      <td>${r.iv}%</td>
+    </tr>`).join('');
+
+  const tradeBox = isNeutral
+    ? `<div style="padding:16px 20px;background:${sigBg};border:2px solid ${sigBorder};border-radius:12px;margin-bottom:16px;">
+        <div style="font-size:16px;font-weight:700;color:${sigTextColor};margin-bottom:10px;">↔️ NEUTRAL — Strangle Strategy</div>
+        <div style="font-size:13px;color:var(--text);">
+          <b>Buy</b> ${data.symbol} <b>${data.recStrike} CE + ${data.recStrike} PE</b> (${data.selectedExpiry})<br>
+          Entry CE ≈ <b>₹${data.entryLow}</b> &nbsp;|&nbsp; Entry PE ≈ <b>₹${data.entryLow}</b><br>
+          Exit both sides if index moves > ${Math.round(data.recStrike * 0.015)} points<br>
+          <span style="color:var(--text2);font-size:12px;">Hold: ${data.holdingPeriod}</span>
+        </div>
+      </div>`
+    : `<div style="padding:16px 20px;background:${sigBg};border:2px solid ${sigBorder};border-radius:12px;margin-bottom:16px;">
+        <div style="font-size:16px;font-weight:700;color:${sigTextColor};margin-bottom:2px;">${data.dirEmoji} ${data.direction.toUpperCase()} — ${data.recommendation} &nbsp;<span style="font-size:12px;font-weight:500;opacity:0.8;">(${data.confidence}% confidence)</span></div>
+        <div style="font-size:22px;font-weight:800;color:${sigTextColor};margin:8px 0;">BUY ${data.symbol} ${data.recStrike} ${data.recType}</div>
+        <div style="font-size:13px;color:var(--text);line-height:1.9;">
+          <b>Expiry:</b> ${data.selectedExpiry}<br>
+          <b>Entry Range:</b> ₹${data.entryLow} – ₹${data.entryHigh} &nbsp;<span style="color:var(--text2);font-size:12px;">(theoretical, check live premium)</span><br>
+          <b style="color:#A32D2D;">Stop Loss:</b> ₹${data.stopLoss} &nbsp;<span style="color:var(--text2);font-size:12px;">(exit if premium drops here)</span><br>
+          <b style="color:#3B6D11;">Target 1:</b> ₹${data.target1} &nbsp;<span style="color:var(--text2);font-size:12px;">(+80%)</span><br>
+          <b style="color:#3B6D11;">Target 2:</b> ₹${data.target2} &nbsp;<span style="color:var(--text2);font-size:12px;">(+150%)</span><br>
+          <b>Hold:</b> ${data.holdingPeriod}
+        </div>
+      </div>`;
+
   document.getElementById('optionsNseCard').innerHTML = `
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:24px;margin-bottom:16px;">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
-        <span style="font-size:28px;font-weight:700;">${data.symbol}</span>
+    <!-- Spot + VIX bar -->
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <span style="font-size:22px;font-weight:800;">${data.symbol}</span>
         <div>
-          <div style="font-size:26px;font-weight:700;">₹${data.spot.toLocaleString('en-IN')}</div>
-          <div style="font-size:14px;color:${color};font-weight:600;">${sign}${data.change} (${sign}${data.changePct}%)</div>
+          <div style="font-size:24px;font-weight:700;">₹${data.spot.toLocaleString('en-IN')}</div>
+          <div style="font-size:13px;color:${chgColor};font-weight:600;">${sign}${data.change} (${sign}${data.changePct}%)</div>
         </div>
       </div>
-      <div style="background:#FFF8E1;border:1px solid #FFD54F;border-radius:10px;padding:14px;margin-bottom:16px;font-size:13px;color:#7A5800;">
-        <strong>⚠️ Why no option chain here?</strong><br>
-        NSE blocks all automated/server-side requests with bot protection. Index options (NIFTY, BANKNIFTY) must be viewed directly on NSE or trusted third-party platforms.
+      <div style="background:var(--surface2);border-radius:10px;padding:10px 16px;text-align:center;">
+        <div style="font-size:11px;color:var(--text2);font-weight:600;">INDIA VIX</div>
+        <div style="font-size:20px;font-weight:700;">${data.vix}</div>
+        <div style="font-size:11px;color:var(--text2);">${vixNote}</div>
       </div>
-      <div style="font-weight:600;margin-bottom:10px;font-size:13px;color:var(--text2);">OPEN OPTION CHAIN ON:</div>
-      <div style="display:flex;flex-direction:column;gap:8px;">
-        ${data.links.map(l => `
-          <a href="${l.url}" target="_blank" rel="noopener noreferrer"
-             style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--blue-lt);border:1px solid #C2D9F0;border-radius:10px;text-decoration:none;color:var(--blue-dk);">
-            <span style="font-weight:600;">${l.label}</span>
-            <span style="font-size:12px;color:var(--text2);">${l.note} ↗</span>
-          </a>`).join('')}
+    </div>
+
+    <!-- Expiry selector -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+      <label style="font-size:12px;font-weight:600;color:var(--text2);">EXPIRY:</label>
+      <select onchange="reloadNseSignal('${data.symbol}', this.value)"
+        style="padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);font-size:13px;font-weight:600;color:var(--text);">
+        ${expiryOpts}
+      </select>
+    </div>
+
+    <!-- Trade signal box -->
+    ${tradeBox}
+
+    <!-- Technical signals -->
+    <div style="margin-bottom:16px;">
+      <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px;">TECHNICAL SIGNALS</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">
+        ${(data.signals || []).map(s => `<span style="font-size:12px;padding:4px 10px;border-radius:20px;background:var(--surface2);border:1px solid var(--border);">${s}</span>`).join('')}
       </div>
-    </div>`;
+    </div>
+
+    <!-- Greeks mini-table -->
+    <div style="margin-bottom:16px;">
+      <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px;">THEORETICAL OPTION PRICES (Black-Scholes, IV=${data.chain?.[5]?.iv || '—'}%)</div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;font-size:12px;border-collapse:collapse;">
+          <thead>
+            <tr style="background:var(--surface2);">
+              <th style="padding:7px 10px;text-align:left;font-weight:600;">Strike</th>
+              <th style="padding:7px 10px;text-align:right;color:#3B6D11;">Call ₹</th>
+              <th style="padding:7px 10px;text-align:right;color:#A32D2D;">Put ₹</th>
+              <th style="padding:7px 10px;text-align:right;">C.Delta</th>
+              <th style="padding:7px 10px;text-align:right;">P.Delta</th>
+              <th style="padding:7px 10px;text-align:right;">C.Theta</th>
+              <th style="padding:7px 10px;text-align:right;">Vega</th>
+              <th style="padding:7px 10px;text-align:right;">IV%</th>
+            </tr>
+          </thead>
+          <tbody>${chainRows}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Execute on -->
+    <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px;">EXECUTE ON (live prices):</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px;">
+      ${(data.links || []).map(l => `
+        <a href="${l.url}" target="_blank" rel="noopener noreferrer"
+           style="flex:1;min-width:140px;display:flex;flex-direction:column;padding:10px 14px;background:var(--blue-lt);border:1px solid #C2D9F0;border-radius:10px;text-decoration:none;color:var(--blue-dk);">
+          <span style="font-weight:600;font-size:13px;">${l.label}</span>
+          <span style="font-size:11px;color:var(--text2);">${l.note}</span>
+        </a>`).join('')}
+    </div>
+    <div class="disclaimer" style="margin-top:14px;">⚠️ Theoretical prices only — for education, not trading advice. Verify live premiums before executing. Not SEBI-registered advice.</div>
+  `;
   document.getElementById('optionsNseCard').style.display = 'block';
   document.getElementById('optionsResults').style.display = 'none';
+}
+
+async function reloadNseSignal(symbol, expiry) {
+  document.getElementById('optionsLoading').style.display = 'block';
+  document.getElementById('optionsNseCard').style.display = 'none';
+  try {
+    const res = await fetch(`/api/options/${encodeURIComponent(symbol)}?expiry=${encodeURIComponent(expiry)}`);
+    const data = await res.json();
+    if (data.error) { showToast('⚠️ ' + data.error); return; }
+    if (data.nseIndex) renderNseCard(data);
+  } catch(e) { showToast('🌐 Error reloading signal.'); }
+  finally { document.getElementById('optionsLoading').style.display = 'none'; }
 }
 
 async function loadOptionsChain(ticker, expiry) {
