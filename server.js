@@ -995,7 +995,13 @@ app.use((req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`\n✅ Indian Stock Analyzer चालू है!`);
-  console.log(`🌐 Browser में खोलें: http://localhost:${PORT}\n`);
-});
+// Local server (ignored on Vercel)
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`\n✅ Indian Stock Analyzer running!`);
+    console.log(`🌐 Open: http://localhost:${PORT}\n`);
+  });
+}
+
+// Required for Vercel serverless
+module.exports = app;
