@@ -470,6 +470,7 @@
     <div class="spinner"></div> Fetching options chain...
   </div>
   <div id="optionsError" style="display:none;" class="disclaimer"></div>
+  <div id="optionsNseCard" style="display:none;"></div>
   <div id="optionsResults" style="display:none;"></div>
 
   <div class="disclaimer" style="margin-top:16px;">
@@ -1861,6 +1862,11 @@ async function loadOptions() {
       document.getElementById('optionsError').style.display = 'block';
       return;
     }
+    // NSE index — show info card instead of chain
+    if (data.nseIndex) {
+      renderNseCard(data);
+      return;
+    }
     // Populate expiry dropdown
     const sel = document.getElementById('optionsExpiry');
     sel.innerHTML = data.expiries.map(e => `<option value="${e}" ${e===data.selectedExpiry?'selected':''}>${e}</option>`).join('');
@@ -1873,6 +1879,36 @@ async function loadOptions() {
     btn.disabled = false; btn.textContent = 'Load Chain 🎯';
     document.getElementById('optionsLoading').style.display = 'none';
   }
+}
+
+function renderNseCard(data) {
+  const sign = data.change >= 0 ? '+' : '';
+  const color = data.change >= 0 ? '#3B6D11' : '#A32D2D';
+  document.getElementById('optionsNseCard').innerHTML = `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:24px;margin-bottom:16px;">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+        <span style="font-size:28px;font-weight:700;">${data.symbol}</span>
+        <div>
+          <div style="font-size:26px;font-weight:700;">₹${data.spot.toLocaleString('en-IN')}</div>
+          <div style="font-size:14px;color:${color};font-weight:600;">${sign}${data.change} (${sign}${data.changePct}%)</div>
+        </div>
+      </div>
+      <div style="background:#FFF8E1;border:1px solid #FFD54F;border-radius:10px;padding:14px;margin-bottom:16px;font-size:13px;color:#7A5800;">
+        <strong>⚠️ Why no option chain here?</strong><br>
+        NSE blocks all automated/server-side requests with bot protection. Index options (NIFTY, BANKNIFTY) must be viewed directly on NSE or trusted third-party platforms.
+      </div>
+      <div style="font-weight:600;margin-bottom:10px;font-size:13px;color:var(--text2);">OPEN OPTION CHAIN ON:</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${data.links.map(l => `
+          <a href="${l.url}" target="_blank" rel="noopener noreferrer"
+             style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--blue-lt);border:1px solid #C2D9F0;border-radius:10px;text-decoration:none;color:var(--blue-dk);">
+            <span style="font-weight:600;">${l.label}</span>
+            <span style="font-size:12px;color:var(--text2);">${l.note} ↗</span>
+          </a>`).join('')}
+      </div>
+    </div>`;
+  document.getElementById('optionsNseCard').style.display = 'block';
+  document.getElementById('optionsResults').style.display = 'none';
 }
 
 async function loadOptionsChain(ticker, expiry) {

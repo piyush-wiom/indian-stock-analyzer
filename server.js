@@ -1176,68 +1176,6 @@ app.get('/api/financials/:ticker', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
-//  NSE Option Chain helper (for NIFTY / BANKNIFTY)
-// ─────────────────────────────────────────────
-async function fetchNSEOptionChain(symbol) {
-  const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-
-  // Step 1: hit NSE homepage to collect Set-Cookie headers
-  const cookies = await new Promise((resolve) => {
-    const req = https.request({
-      hostname: 'www.nseindia.com',
-      path: '/',
-      method: 'GET',
-      headers: {
-        'User-Agent': UA,
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-      },
-    }, (resp) => {
-      const setCookies = resp.headers['set-cookie'] || [];
-      const jar = setCookies.map(c => c.split(';')[0]).join('; ');
-      resp.resume(); // drain body
-      resolve(jar);
-    });
-    req.on('error', () => resolve(''));
-    req.end();
-  });
-
-  // Step 2: small delay to appear human
-  await new Promise(r => setTimeout(r, 600));
-
-  // Step 3: fetch option chain with the cookies
-  const apiPath = `/api/option-chain-indices?symbol=${encodeURIComponent(symbol)}`;
-  return new Promise((resolve, reject) => {
-    const req = https.request({
-      hostname: 'www.nseindia.com',
-      path: apiPath,
-      method: 'GET',
-      headers: {
-        'User-Agent': UA,
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Connection': 'keep-alive',
-        'Referer': 'https://www.nseindia.com/option-chain',
-        'X-Requested-With': 'XMLHttpRequest',
-        'Cookie': cookies,
-      },
-    }, (resp) => {
-      const chunks = [];
-      resp.on('data', c => chunks.push(c));
-      resp.on('end', () => {
-        const body = Buffer.concat(chunks).toString();
-        try { resolve(JSON.parse(body)); }
-        catch { reject(new Error('NSE returned non-JSON. Bot protection may be active.')); }
-      });
-    });
-    req.on('error', reject);
-    req.end();
-  });
-}
-
-// ─────────────────────────────────────────────
 //  Route: Options Chain + Greeks
 // ─────────────────────────────────────────────
 const NSE_INDEX_SYMBOLS = { '^NSEI': 'NIFTY', '^NSEBANK': 'BANKNIFTY' };
@@ -1248,54 +1186,26 @@ app.get('/api/options/:ticker', async (req, res) => {
   const R = 0.065;
 
   // ── NSE index options (NIFTY / BANKNIFTY) ──
+  // NSE blocks all server-side API calls with Cloudflare/JS cookie protection.
+  // Return spot price + direct links so user can check on official sources.
   const nseSymbol = NSE_INDEX_SYMBOLS[fullTicker];
   if (nseSymbol) {
-    try {
-      const raw = await fetchNSEOptionChain(nseSymbol);
-      if (!raw || !raw.records) return res.status(404).json({ error: 'NSE option chain unavailable. Try again in a moment.' });
-
-      const spot = raw.records.underlyingValue || 0;
-      // All unique expiry dates from NSE
-      const allExpiries = [...new Set(raw.records.data.map(r => r.expiryDate))].sort((a, b) => new Date(a) - new Date(b));
-      const selectedExpiry = expiry || allExpiries[0];
-      const T = selectedExpiry ? Math.max((new Date(selectedExpiry) - Date.now()) / (365 * 86400000), 0.001) : 0.05;
-
-      const rows = raw.records.data.filter(r => r.expiryDate === selectedExpiry);
-      const calls = [], puts = [];
-
-      rows.forEach(r => {
-        const K = r.strikePrice;
-        const isATM = Math.abs(K - spot) <= spot * 0.01;
-        if (r.CE) {
-          const iv = (r.CE.impliedVolatility || 20) / 100;
-          const greeks = blackScholes(spot, K, T, R, iv, 'call');
-          calls.push({ strike: K, type: 'call', lastPrice: r.CE.lastPrice, bid: r.CE.bidprice, ask: r.CE.askPrice,
-            volume: r.CE.totalTradedVolume, openInterest: r.CE.openInterest, iv: +(iv * 100).toFixed(1),
-            delta: greeks.delta, gamma: greeks.gamma, theta: greeks.theta, vega: greeks.vega,
-            isATM, inTheMoney: K < spot, expiry: selectedExpiry });
-        }
-        if (r.PE) {
-          const iv = (r.PE.impliedVolatility || 20) / 100;
-          const greeks = blackScholes(spot, K, T, R, iv, 'put');
-          puts.push({ strike: K, type: 'put', lastPrice: r.PE.lastPrice, bid: r.PE.bidprice, ask: r.PE.askPrice,
-            volume: r.PE.totalTradedVolume, openInterest: r.PE.openInterest, iv: +(iv * 100).toFixed(1),
-            delta: greeks.delta, gamma: greeks.gamma, theta: greeks.theta, vega: greeks.vega,
-            isATM, inTheMoney: K > spot, expiry: selectedExpiry });
-        }
-      });
-
-      const atmCall = calls.find(c => c.isATM) || calls[Math.floor(calls.length / 2)];
-      const avgIV = atmCall?.iv || 20;
-      const highIV = avgIV > 20;
-      let strategy, strategyReason;
-      if      (!highIV) { strategy = '📈 Buy Call/Put'; strategyReason = `IV is low (${avgIV}%). Options are cheap — directional buying is cost-effective.`; }
-      else if (highIV)  { strategy = '🎯 Sell Strangle / Iron Condor'; strategyReason = `IV is elevated (${avgIV}%). Selling premium (strangle/condor) benefits from IV crush.`; }
-      else              { strategy = '⏸️ Wait & Watch'; strategyReason = `No clear signal. Wait for trend confirmation.`; }
-
-      return res.json({ ticker: nseSymbol, spot, expiries: allExpiries, selectedExpiry, calls, puts, strategy, strategyReason, avgIV, source: 'NSE' });
-    } catch (e) {
-      return res.status(500).json({ error: 'NSE option chain failed: ' + e.message });
-    }
+    const quoteData = await yf.quote(fullTicker, {}, { validateResult: false }).catch(() => null);
+    const spot = quoteData?.regularMarketPrice || 0;
+    const change = quoteData?.regularMarketChange || 0;
+    const changePct = quoteData?.regularMarketChangePercent || 0;
+    return res.status(200).json({
+      nseIndex: true,
+      symbol: nseSymbol,
+      spot: +spot.toFixed(2),
+      change: +change.toFixed(2),
+      changePct: +changePct.toFixed(2),
+      links: [
+        { label: 'NSE Option Chain (Official)', url: `https://www.nseindia.com/option-chain`, note: 'Select ' + nseSymbol + ' from dropdown' },
+        { label: 'Sensibull Option Chain', url: `https://sensibull.com/nifty`, note: 'Free, real-time Greeks' },
+        { label: 'Opstra (OI Analysis)', url: `https://opstra.definedge.com/`, note: 'Free OI charts + strategy builder' },
+      ],
+    });
   }
 
   // ── Stock options via Yahoo Finance ──
