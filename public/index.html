@@ -1899,8 +1899,8 @@ function renderNseCard(data) {
   const chainRows = (data.chain || []).map(r => {
     const symCE = generateNseSymClient(data.symbol, data.selectedExpiry, r.strike, 'CE');
     const symPE = generateNseSymClient(data.symbol, data.selectedExpiry, r.strike, 'PE');
-    const kiteUrlCE = `https://kite.zerodha.com/orders?action=buy&tradingsymbol=${symCE}&exchange=NFO&product=MIS&order_type=MARKET&quantity=${data.lotSize}`;
-    const kiteUrlPE = `https://kite.zerodha.com/orders?action=buy&tradingsymbol=${symPE}&exchange=NFO&product=MIS&order_type=MARKET&quantity=${data.lotSize}`;
+    const kiteUrlCE = `https://kite.zerodha.com/chart/ext/nfo/${symCE}`;
+    const kiteUrlPE = `https://kite.zerodha.com/chart/ext/nfo/${symPE}`;
     return `
     <tr style="background:${r.isATM ? 'var(--blue-lt)' : 'transparent'};font-weight:${r.isATM ? '700' : '400'};">
       <td style="color:${r.isATM ? 'var(--blue)' : 'inherit'};white-space:nowrap;">${r.strike}${r.isATM ? ' ★' : ''}</td>
@@ -1942,11 +1942,11 @@ function renderNseCard(data) {
             <code id="nseSymCode" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:13px;font-weight:700;letter-spacing:.5px;">${data.recNseSymbol}</code>
             <button onclick="copyNseSym('${data.recNseSymbol}')"
               style="padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);font-size:12px;cursor:pointer;font-weight:600;">📋 Copy Symbol</button>
-            <a href="https://kite.zerodha.com/orders?action=buy&tradingsymbol=${data.recNseSymbol}&exchange=NFO&product=MIS&order_type=MARKET&quantity=${data.lotSize}"
+            <a href="https://kite.zerodha.com/chart/ext/nfo/${data.recNseSymbol}"
                target="_blank" rel="noopener noreferrer"
                style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:#387ED1;color:#fff;border-radius:8px;text-decoration:none;font-size:13px;font-weight:700;">
               <img src="https://zerodha.com/static/images/favicon.ico" width="14" height="14" style="border-radius:2px;" onerror="this.style.display='none'">
-              Buy on Kite
+              Open in Kite
             </a>
           </div>
         </div>
