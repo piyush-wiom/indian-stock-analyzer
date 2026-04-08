@@ -520,6 +520,18 @@ app.get('/api/analyze/:query', async (req, res) => {
   const highs   = history.map(d => d.high  || d.close || 0);
   const lows    = history.map(d => d.low   || d.close || 0);
 
+  // Include today's live price so indicators reflect current intraday move
+  const livePrice = quote?.regularMarketPrice;
+  if (livePrice && livePrice > 0) {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (dates[dates.length - 1] === todayStr) {
+      closes[closes.length - 1] = livePrice; // replace today's close with live price
+    } else {
+      closes.push(livePrice); // append today's intraday price
+      volumes.push(quote?.regularMarketVolume || 0);
+    }
+  }
+
   const ind  = analyse(closes, volumes);
   const name = quote?.longName || quote?.shortName || ticker.replace(/\.(NS|BO)$/, '');
   ind.explanation = buildExplanation(ind, name);
@@ -609,6 +621,8 @@ app.post('/api/bulk', upload.single('file'), async (req, res) => {
 
       const closes  = hist.map(d => d.close || 0).filter(v => v > 0);
       const volumes = hist.map(d => d.volume || 0);
+      const liveP = quote?.regularMarketPrice;
+      if (liveP && liveP > 0) closes[closes.length - 1] = liveP;
       const ind     = analyse(closes, volumes);
 
       row.company    = quote?.longName || quote?.shortName || ticker;
@@ -815,6 +829,8 @@ app.post('/api/portfolio', upload.single('file'), async (req, res) => {
 
       const closes  = hist.map(d => d.close || 0).filter(v => v > 0);
       const volumes = hist.map(d => d.volume || 0);
+      const liveP2 = quote?.regularMarketPrice;
+      if (liveP2 && liveP2 > 0) closes[closes.length - 1] = liveP2;
       const ind     = analyse(closes, volumes);
 
       const cp = closes[closes.length - 1];
@@ -1073,6 +1089,8 @@ app.get('/api/daily-picks', async (req, res) => {
       const highs  = quotes.map(q => q.high || q.close);
       const lows   = quotes.map(q => q.low  || q.close);
       const vols   = quotes.map(q => q.volume || 0);
+      const liveP3 = quote?.regularMarketPrice;
+      if (liveP3 && liveP3 > 0) closes[closes.length - 1] = liveP3;
 
       const ind = analyse(closes, vols);
       const atr = calcATR(highs, lows, closes);
