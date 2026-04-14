@@ -513,21 +513,26 @@ app.get('/api/analyze/:query', async (req, res) => {
     return res.status(404).json({ error: `'${raw}' के लिए पर्याप्त data नहीं। Newly listed stock हो सकता है।` });
   }
 
-  const closes  = history.map(d => d.close  || 0).filter(v => v > 0);
-  const volumes = history.map(d => d.volume || 0);
-  const dates   = history.map(d => new Date(d.date).toISOString().slice(0, 10));
-  const opens   = history.map(d => d.open  || d.close || 0);
-  const highs   = history.map(d => d.high  || d.close || 0);
-  const lows    = history.map(d => d.low   || d.close || 0);
+  const validHistory = history.filter(d => d.close > 0);
+  const closes  = validHistory.map(d => d.close);
+  const volumes = validHistory.map(d => d.volume || 0);
+  const dates   = validHistory.map(d => new Date(d.date).toISOString().slice(0, 10));
+  const opens   = validHistory.map(d => d.open  || d.close);
+  const highs   = validHistory.map(d => d.high  || d.close);
+  const lows    = validHistory.map(d => d.low   || d.close);
 
   // Include today's live price so indicators reflect current intraday move
   const livePrice = quote?.regularMarketPrice;
   if (livePrice && livePrice > 0) {
     const todayStr = new Date().toISOString().slice(0, 10);
     if (dates[dates.length - 1] === todayStr) {
-      closes[closes.length - 1] = livePrice; // replace today's close with live price
+      closes[closes.length - 1] = livePrice;
+      highs[highs.length - 1]   = Math.max(highs[highs.length - 1], livePrice);
+      lows[lows.length - 1]     = Math.min(lows[lows.length - 1],  livePrice);
     } else {
-      closes.push(livePrice); // append today's intraday price
+      closes.push(livePrice);
+      highs.push(livePrice);
+      lows.push(livePrice);
       volumes.push(quote?.regularMarketVolume || 0);
     }
   }
