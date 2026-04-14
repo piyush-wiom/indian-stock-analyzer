@@ -1085,6 +1085,54 @@ function renderStockResult(d) {
       <div class="rec-explanation" style="font-size:13px;color:#444;line-height:1.8;">${ind.explanation}</div>
     </div>
 
+    ${(() => {
+      const ts = d.tradeSetup;
+      if (!ts) return '';
+      const isBull = ts.stopLoss !== null && ts.stopLoss < ts.entryPrice;
+      const isBear = ts.stopLoss !== null && ts.stopLoss > ts.entryPrice;
+      const hasSetup = ts.stopLoss !== null;
+      if (!hasSetup) return `
+      <div style="background:#F7F6F3;border:1px solid #E0E0E0;border-radius:12px;padding:16px;margin-bottom:16px;">
+        <div style="font-size:14px;font-weight:600;color:var(--text2);margin-bottom:4px;">📐 Trade Setup</div>
+        <div style="font-size:13px;color:var(--text3);">No clear trade setup at this time. Wait for a stronger signal before entering.</div>
+      </div>`;
+      return `
+      <div style="background:${isBull?'#EAFAF1':'#FEF0EE'};border:1.5px solid ${isBull?'#2ECC71':'#E74C3C'};border-radius:12px;padding:16px 18px;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <div style="font-size:14px;font-weight:700;color:${isBull?'#1A7A4A':'#C0392B'};">
+            ${isBull?'📈 Trade Setup — BUY':'📉 Trade Setup — EXIT/SHORT'}
+          </div>
+          <span style="font-size:12px;background:${isBull?'#D5F5E3':'#FDEDEC'};color:${isBull?'#00A36C':'#E74C3C'};padding:3px 10px;border-radius:20px;font-weight:600;">
+            Hold: ${ts.holdingPeriod}
+          </span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:12px;">
+          <div style="background:white;border-radius:8px;padding:10px 12px;">
+            <div style="font-size:11px;color:var(--text3);margin-bottom:2px;">Entry Price</div>
+            <div style="font-size:16px;font-weight:700;color:var(--text);">₹${ts.entryPrice.toLocaleString('en-IN')}</div>
+          </div>
+          <div style="background:white;border-radius:8px;padding:10px 12px;border-left:3px solid #E74C3C;">
+            <div style="font-size:11px;color:#E74C3C;margin-bottom:2px;">Stop Loss${ts.slPct?` (−${ts.slPct}%)`:''}
+</div>
+            <div style="font-size:16px;font-weight:700;color:#E74C3C;">₹${ts.stopLoss.toLocaleString('en-IN')}</div>
+          </div>
+          <div style="background:white;border-radius:8px;padding:10px 12px;border-left:3px solid #2ECC71;">
+            <div style="font-size:11px;color:#27AE60;margin-bottom:2px;">Target 1${ts.tgt1Pct?` (+${ts.tgt1Pct}%)`:''}</div>
+            <div style="font-size:16px;font-weight:700;color:#27AE60;">₹${ts.target1.toLocaleString('en-IN')}</div>
+          </div>
+          <div style="background:white;border-radius:8px;padding:10px 12px;border-left:3px solid #1A7A4A;">
+            <div style="font-size:11px;color:#1A7A4A;margin-bottom:2px;">Target 2${ts.tgt2Pct?` (+${ts.tgt2Pct}%)`:''}</div>
+            <div style="font-size:16px;font-weight:700;color:#1A7A4A;">₹${ts.target2.toLocaleString('en-IN')}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:12px;">
+          <span style="background:white;padding:3px 10px;border-radius:20px;color:var(--text2);border:1px solid #E0E0E0;">R:R ${ts.riskReward}</span>
+          <span style="background:white;padding:3px 10px;border-radius:20px;color:var(--text3);border:1px solid #E0E0E0;">ATR ₹${ts.atr}</span>
+          <span style="background:#FFF8E1;padding:3px 10px;border-radius:20px;color:#856404;border:1px solid #F0D080;">⚠️ Not SEBI advice — use your own judgment</span>
+        </div>
+      </div>`;
+    })()}
+
     <div class="breakdown">
       <div class="breakdown-title">Indicator Score Breakdown</div>
       ${bdRows}
@@ -1687,43 +1735,87 @@ function renderDailyPicks(data) {
 
   const cards = picks.map(p => {
     const rc = recColors[p.recommendation] || { bg:'#FEF9E7', color:'#F39C12', border:'#F39C12' };
-    const chgColor = '#2ECC71';
+    const slPct = p.price > 0 ? ((p.price - p.stopLoss) / p.price * 100).toFixed(1) : null;
+    const tgt1Pct = p.price > 0 ? ((p.target  - p.price) / p.price * 100).toFixed(1) : null;
+    const tgt2Pct = p.price > 0 ? ((p.target2 - p.price) / p.price * 100).toFixed(1) : null;
+    const rsiColor = p.rsiValue >= 60 ? '#27AE60' : p.rsiValue <= 40 ? '#E74C3C' : '#F39C12';
+    const volBadge = p.volumeMult && p.volumeMult >= 1.5
+      ? `<span style="background:#FFF3CD;color:#856404;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;">🔥 ${p.volumeMult}× Vol</span>` : '';
     return `
     <div class="pick-card">
       <div class="pick-header">
         <div>
-          <div class="pick-company">${p.company}</div>
-          <span class="pick-ticker">${p.ticker}</span>
+          <div class="pick-company" style="font-size:14px;font-weight:700;">${p.company}</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:2px;">
+            <span class="pick-ticker">${p.ticker}</span>
+            ${p.sector ? `<span style="font-size:11px;color:var(--text3);">${p.sector}</span>` : ''}
+          </div>
         </div>
-        <span class="rec-badge" style="background:${rc.bg};color:${rc.color};border:1px solid ${rc.border};">${p.recommendation}</span>
-      </div>
-      <div class="pick-prices">
-        <div class="pick-price-cell" style="background:var(--surface2);">
-          <div class="pick-price-label" style="color:var(--text3);">Entry</div>
-          <div class="pick-price-value">₹${p.price.toLocaleString('en-IN')}</div>
-        </div>
-        <div class="pick-price-cell" style="background:#FDEDEC;">
-          <div class="pick-price-label" style="color:#E74C3C;">Stop Loss</div>
-          <div class="pick-price-value" style="color:#E74C3C;">₹${p.stopLoss.toLocaleString('en-IN')}</div>
-        </div>
-        <div class="pick-price-cell" style="background:#EAFAF1;">
-          <div class="pick-price-label" style="color:#2ECC71;">Target</div>
-          <div class="pick-price-value" style="color:#2ECC71;">₹${p.target.toLocaleString('en-IN')}</div>
+        <div style="text-align:right;">
+          <span class="rec-badge" style="background:${rc.bg};color:${rc.color};border:1px solid ${rc.border};display:block;margin-bottom:4px;">${p.recommendation}</span>
+          ${p.pe ? `<span style="font-size:11px;color:var(--text3);">P/E ${p.pe}x</span>` : ''}
         </div>
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-        <span class="badge" style="background:#E6F1FB;color:#185FA5;">R:R ${p.riskReward}</span>
-        <span class="badge" style="background:var(--surface2);color:var(--text2);">⏱ ${p.holdingPeriod}</span>
-        <span class="badge" style="background:var(--surface2);color:var(--text2);">RSI ${p.rsiValue}</span>
-        <span class="badge" style="background:${p.maCross==='Golden'?'#D5F5E3':p.maCross==='Death'?'#FDEDEC':'var(--surface2)'};color:${p.maCross==='Golden'?'#00A36C':p.maCross==='Death'?'#E74C3C':'var(--text2)'};">${p.maCross} Cross</span>
+
+      <!-- Price header -->
+      <div style="display:flex;align-items:baseline;gap:8px;margin:8px 0 10px;">
+        <div style="font-size:20px;font-weight:700;">₹${p.price.toLocaleString('en-IN')}</div>
+        ${volBadge}
       </div>
-      <div style="margin-bottom:6px;">
-        <div style="font-size:11px;color:var(--text3);margin-bottom:3px;">Confidence: ${p.confidence}%</div>
-        <div style="background:#F0F0F0;border-radius:6px;height:6px;">
-          <div style="width:${p.confidence}%;background:${rc.color};height:6px;border-radius:6px;"></div>
+
+      <!-- 52-week range bar -->
+      ${p.week52Pct !== null ? `
+      <div style="margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:3px;">
+          <span>52W Low ₹${p.week52Low?.toLocaleString('en-IN')}</span>
+          <span style="font-weight:600;color:var(--text2);">${p.week52Pct}% of range</span>
+          <span>52W High ₹${p.week52High?.toLocaleString('en-IN')}</span>
+        </div>
+        <div style="background:#E8E8E8;border-radius:4px;height:5px;position:relative;">
+          <div style="width:${p.week52Pct}%;background:${p.week52Pct<=30?'#E74C3C':p.week52Pct>=70?'#2ECC71':'#F39C12'};height:5px;border-radius:4px;"></div>
+        </div>
+      </div>` : ''}
+
+      <!-- SL / Targets grid -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px;">
+        <div style="background:#FDEDEC;border-radius:8px;padding:8px;text-align:center;">
+          <div style="font-size:10px;color:#E74C3C;margin-bottom:1px;">Stop Loss</div>
+          <div style="font-size:13px;font-weight:700;color:#E74C3C;">₹${p.stopLoss.toLocaleString('en-IN')}</div>
+          ${slPct?`<div style="font-size:10px;color:#E74C3C;">−${slPct}%</div>`:''}
+        </div>
+        <div style="background:#EAFAF1;border-radius:8px;padding:8px;text-align:center;">
+          <div style="font-size:10px;color:#27AE60;margin-bottom:1px;">Target 1</div>
+          <div style="font-size:13px;font-weight:700;color:#27AE60;">₹${p.target.toLocaleString('en-IN')}</div>
+          ${tgt1Pct?`<div style="font-size:10px;color:#27AE60;">+${tgt1Pct}%</div>`:''}
+        </div>
+        <div style="background:#D5F5E3;border-radius:8px;padding:8px;text-align:center;">
+          <div style="font-size:10px;color:#1A7A4A;margin-bottom:1px;">Target 2</div>
+          <div style="font-size:13px;font-weight:700;color:#1A7A4A;">₹${(p.target2||p.target).toLocaleString('en-IN')}</div>
+          ${tgt2Pct?`<div style="font-size:10px;color:#1A7A4A;">+${tgt2Pct}%</div>`:''}
         </div>
       </div>
-      <div style="display:flex;gap:8px;margin-top:10px;">
+
+      <!-- Signal pills -->
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;">
+        <span style="background:#E6F1FB;color:#185FA5;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;">R:R ${p.riskReward}</span>
+        <span style="background:var(--surface2);color:var(--text2);padding:2px 8px;border-radius:20px;font-size:11px;">⏱ ${p.holdingPeriod}</span>
+        <span style="background:${rsiColor}18;color:${rsiColor};padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;">RSI ${p.rsiValue?.toFixed(0)}</span>
+        <span style="background:${p.maCross==='Golden'?'#D5F5E3':p.maCross==='Death'?'#FDEDEC':'var(--surface2)'};color:${p.maCross==='Golden'?'#00A36C':p.maCross==='Death'?'#E74C3C':'var(--text2)'};padding:2px 8px;border-radius:20px;font-size:11px;">${p.maCross} Cross</span>
+        <span style="background:${p.macdSignal==='Bullish'?'#E6F9EF':'#FDEDEC'};color:${p.macdSignal==='Bullish'?'#27AE60':'#E74C3C'};padding:2px 8px;border-radius:20px;font-size:11px;">MACD ${p.macdSignal}</span>
+        ${p.bbSignal && p.bbSignal!=='Neutral'?`<span style="background:#FFF8E1;color:#856404;padding:2px 8px;border-radius:20px;font-size:11px;">BB ${p.bbSignal}</span>`:''}
+      </div>
+
+      <!-- Confidence bar -->
+      <div style="margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:3px;">
+          <span>Confidence</span><span style="font-weight:600;color:${rc.color};">${p.confidence}%</span>
+        </div>
+        <div style="background:#F0F0F0;border-radius:6px;height:5px;">
+          <div style="width:${p.confidence}%;background:${rc.color};height:5px;border-radius:6px;"></div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;">
         <button class="btn btn-outline btn-sm" style="flex:1;" onclick="quickSearch('${p.ticker}')">📊 Full Analysis</button>
         <button class="btn btn-outline btn-sm" onclick="addToWatchlist('${p.ticker}','${p.company.replace(/'/g,"\\'")}')">⭐</button>
       </div>

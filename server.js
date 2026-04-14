@@ -539,6 +539,31 @@ app.get('/api/analyze/:query', async (req, res) => {
   const cp   = closes[closes.length - 1];
   const prev = closes[closes.length - 2] || cp;
 
+  // Trade Setup — ATR-based SL / Target
+  const atr14      = calcATR(highs, lows, closes, 14);
+  const score      = ind.totalScore;
+  const isBullish  = score >= 1;
+  const isBearish  = score <= -1;
+  const tradeSetup = {
+    atr:          +atr14.toFixed(2),
+    entryPrice:   +cp.toFixed(2),
+    stopLoss:     isBullish  ? +(cp - 1.5 * atr14).toFixed(2)
+                : isBearish  ? +(cp + 1.5 * atr14).toFixed(2) : null,
+    target1:      isBullish  ? +(cp + 2 * atr14).toFixed(2)
+                : isBearish  ? +(cp - 2 * atr14).toFixed(2) : null,
+    target2:      isBullish  ? +(cp + 4 * atr14).toFixed(2)
+                : isBearish  ? +(cp - 4 * atr14).toFixed(2) : null,
+    riskReward:   '1:2',
+    holdingPeriod: score >= 3 ? 'Positional (2–4 weeks)'
+                 : score >= 1 ? 'Swing (3–7 days)'
+                 : score <= -3 ? 'Exit immediately'
+                 : score <= -1 ? 'Exit within 1–2 days'
+                 : 'Wait — no clear trade',
+    slPct:        isBullish ? +((1.5 * atr14 / cp * 100).toFixed(1)) : null,
+    tgt1Pct:      isBullish ? +((2 * atr14 / cp * 100).toFixed(1)) : null,
+    tgt2Pct:      isBullish ? +((4 * atr14 / cp * 100).toFixed(1)) : null,
+  };
+
   res.json({
     ticker,
     displayTicker:  ticker.replace(/\.(NS|BO)$/, ''),
@@ -559,6 +584,7 @@ app.get('/api/analyze/:query', async (req, res) => {
     avgVolume:      quote?.averageVolume || null,
     beta:           quote?.beta || null,
     indicators:     ind,
+    tradeSetup,
     chartData:      { dates, closes, opens, highs, lows, volumes },
   });
 });
@@ -1100,22 +1126,39 @@ app.get('/api/daily-picks', async (req, res) => {
       const riskReward = '1:2';
       const holdingPeriod = ind.totalScore >= 3 ? 'Positional (2–4 weeks)' : 'Swing (3–7 days)';
 
+      const w52High = quote.fiftyTwoWeekHigh || null;
+      const w52Low  = quote.fiftyTwoWeekLow  || null;
+      const w52Pct  = (w52High && w52Low && w52High > w52Low)
+                      ? +((cp - w52Low) / (w52High - w52Low) * 100).toFixed(1) : null;
+      const volNow  = quote.regularMarketVolume || 0;
+      const volAvg  = quote.averageVolume || 0;
+      const volMult = volAvg > 0 ? +(volNow / volAvg).toFixed(1) : null;
+      const target2 = +(cp + 4.0 * atr).toFixed(2);
+
       return {
         ticker: ticker.replace('.NS','').replace('.BO',''),
         fullTicker: ticker,
         company: quote.longName || quote.shortName || ticker,
+        sector: quote.sector || null,
         price: +cp.toFixed(2),
+        pe: quote.trailingPE ? +quote.trailingPE.toFixed(1) : null,
+        week52High: w52High,
+        week52Low:  w52Low,
+        week52Pct:  w52Pct,
+        volumeMult: volMult,
         score: ind.totalScore,
         recommendation: ind.recommendation,
         confidence: ind.confidence,
         atr: +atr.toFixed(2),
         stopLoss,
         target,
+        target2,
         riskReward,
         holdingPeriod,
         rsiValue: ind.rsi.value,
         macdSignal: ind.macd.score === 1 ? 'Bullish' : 'Bearish',
         maCross: ind.movingAverages.score === 1 ? 'Golden' : ind.movingAverages.score === -1 ? 'Death' : 'Neutral',
+        bbSignal: ind.bollinger.score === 1 ? 'At Support' : ind.bollinger.score === -1 ? 'Overbought' : 'Neutral',
       };
     }));
     settled.forEach(r => { if (r.status === 'fulfilled' && r.value) results.push(r.value); });
