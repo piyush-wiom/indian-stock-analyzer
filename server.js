@@ -135,12 +135,12 @@ function analyse(closes, volumes) {
   const volScore = vol20 > 0 && vol5 > vol20 * 1.2 ? 0.5 : 0;
   const total = rsiScore + macdScore + maScore + bbScore + volScore;
 
-  let rec, color, emoji;
-  if      (total >= 3)  { rec = 'Strong Buy';  color = '#00A36C'; emoji = '🚀'; }
-  else if (total >= 1)  { rec = 'Buy';          color = '#2ECC71'; emoji = '✅'; }
-  else if (total >= -1) { rec = 'Hold';         color = '#F39C12'; emoji = '⏸️'; }
-  else if (total >= -3) { rec = 'Sell';         color = '#E74C3C'; emoji = '⚠️'; }
-  else                  { rec = 'Strong Sell';  color = '#8B0000'; emoji = '🔴'; }
+  let rec, recDetail, color, emoji;
+  if      (total >= 3)  { rec = 'Strong Buy';           recDetail = 'Strong entry opportunity. Technicals are aligned bullishly.';                           color = '#00A36C'; emoji = '🚀'; }
+  else if (total >= 1)  { rec = 'Buy';                  recDetail = 'Good time to enter. Consider buying in parts (SIP style).';                            color = '#2ECC71'; emoji = '✅'; }
+  else if (total >= -1) { rec = 'Wait & Watch';         recDetail = 'No clear signal. If you own it — hold. If not — wait for a better entry.';             color = '#F39C12'; emoji = '⏸️'; }
+  else if (total >= -3) { rec = 'Avoid / Cut Loss';     recDetail = 'Technicals are weak. If you own it — consider exiting. If not — avoid buying now.';   color = '#E74C3C'; emoji = '⚠️'; }
+  else                  { rec = 'Strong Avoid / Exit';  recDetail = 'High risk. Strong downtrend. If you own it — exit. If not — stay away.';               color = '#8B0000'; emoji = '🔴'; }
 
   const confidence = Math.min(100, Math.round(Math.abs(total) / 5.5 * 100));
 
@@ -151,7 +151,7 @@ function analyse(closes, volumes) {
     bollinger:      { upper: +bbU.toFixed(2), middle: +bbM.toFixed(2), lower: +bbL.toFixed(2), score: bbScore },
     volume:         { avg5d: Math.round(vol5), avg20d: Math.round(vol20), score: volScore },
     totalScore:     +total.toFixed(2),
-    recommendation: rec, color, emoji, confidence,
+    recommendation: rec, recDetail, color, emoji, confidence,
   };
 }
 
@@ -167,8 +167,8 @@ function buildExplanation(ind, name) {
   else if (ind.bollinger.score === -1)  neg.push('Price above upper Bollinger Band — overbought');
   if (ind.volume.score === 0.5)         pos.push('Volume spike — signal strength confirmed');
 
-  let t = `${name}: ${ind.recommendation} — ${ind.confidence}% confidence.`;
-  if (pos.length) t += '\n✅ Bullish signals: ' + pos.join(', ') + '.';
+  let t = `${name}: ${ind.recommendation} — ${ind.confidence}% confidence.\n📌 ${ind.recDetail}`;
+  if (pos.length) t += '\n\n✅ Bullish signals: ' + pos.join(', ') + '.';
   if (neg.length) t += '\n⚠️ Bearish signals: ' + neg.join(', ') + '.';
   t += '\n\n⚡ Disclaimer: Educational only. Consult a SEBI-registered advisor before investing.';
   return t;

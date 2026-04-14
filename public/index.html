@@ -1072,6 +1072,9 @@ function renderStockResult(d) {
         <div class="rec-emoji">${ind.emoji}</div>
         <div class="rec-label" style="color:${s.color};">${ind.recommendation.toUpperCase()}</div>
       </div>
+      <div style="background:${s.bg};border:1px solid ${s.border};border-radius:8px;padding:10px 14px;margin:8px 0;font-size:13px;color:${s.color};font-weight:500;">
+        📌 ${ind.recDetail}
+      </div>
       <div class="rec-meta">
         <div class="rec-badge" style="background:${s.color};color:white;">Confidence: ${ind.confidence}%</div>
         <div class="rec-badge" style="background:#F0F0F0;color:#333;">Score: ${ind.totalScore > 0 ? '+' : ''}${ind.totalScore} / 5.5</div>
