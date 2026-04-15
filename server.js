@@ -1065,6 +1065,42 @@ const NIFTY50 = [
   'HINDALCO.NS','VEDL.NS','SBILIFE.NS','HDFCLIFE.NS','SHREECEM.NS'
 ];
 
+const NIFTY_NEXT50 = [
+  'ADANIGREEN.NS','AMBUJACEM.NS','BAJAJHLDNG.NS','BANKBARODA.NS','BERGEPAINT.NS',
+  'BOSCHLTD.NS','CHOLAFIN.NS','COLPAL.NS','DMART.NS','GAIL.NS',
+  'GODREJCP.NS','GODREJPROP.NS','HAVELLS.NS','HINDPETRO.NS','ICICIPRULI.NS',
+  'INDHOTEL.NS','IOC.NS','IRCTC.NS','LICI.NS','LTIM.NS',
+  'LUPIN.NS','MUTHOOTFIN.NS','NAUKRI.NS','NMDC.NS','OFSS.NS',
+  'PAGEIND.NS','PIDILITIND.NS','PIIND.NS','PFC.NS','RECLTD.NS',
+  'SBICARD.NS','SIEMENS.NS','SRF.NS','TORNTPHARM.NS','TRENT.NS',
+  'TVSMOTOR.NS','UBL.NS','UPL.NS','VBL.NS','VOLTAS.NS',
+  'ZOMATO.NS','PAYTM.NS','NYKAA.NS','DELHIVERY.NS','POLICYBZR.NS',
+  'ICICIGI.NS','HDFCAMC.NS','MFSL.NS','ABCAPITAL.NS','SAIL.NS'
+];
+
+const NIFTY_MIDCAP100 = [
+  'ALKEM.NS','ASTRAL.NS','AUBANK.NS','BALRAMCHIN.NS','BIOCON.NS',
+  'CANFINHOME.NS','CESC.NS','CRISIL.NS','DEEPAKNTR.NS','ELGIEQUIP.NS',
+  'EXIDEIND.NS','FEDERALBNK.NS','FORTIS.NS','GMRINFRA.NS','GNFC.NS',
+  'GRANULES.NS','GUJGASLTD.NS','HAPPSTMNDS.NS','HINDCOPPER.NS','IDFCFIRSTB.NS',
+  'INDIGO.NS','IRFC.NS','IEX.NS','JKCEMENT.NS','JSWENERGY.NS',
+  'JUBLFOOD.NS','KALYANKJIL.NS','KANSAINER.NS','KEI.NS','KPITTECH.NS',
+  'LAURUSLABS.NS','LTTS.NS','MARICO.NS','MCX.NS','METROPOLIS.NS',
+  'MGL.NS','MPHASIS.NS','NATCOPHARM.NS','NBCC.NS','NHPC.NS',
+  'OBEROIRLTY.NS','PERSISTENT.NS','PETRONET.NS','POLYCAB.NS','RBLBANK.NS',
+  'RAMCOCEM.NS','RITES.NS','ROUTE.NS','SCHAEFFLER.NS','SOBHA.NS',
+  'SONACOMS.NS','SUNTV.NS','SUPREMEIND.NS','SYNGENE.NS','TATACHEM.NS',
+  'TATACOMM.NS','TATAPOWER.NS','THERMAX.NS','TIINDIA.NS','TORNTPOWER.NS',
+  'TRIDENT.NS','VGUARD.NS','VINATIORGA.NS','WELCORP.NS','ZEEL.NS',
+  'ABFRL.NS','AARTIIND.NS','APLAPOLLO.NS','CAMS.NS','CHOLAHLDNG.NS',
+  'CUB.NS','DELTACORP.NS','FINEORG.NS','GLAXO.NS','GODREJIND.NS',
+  'GRAPHITE.NS','INTELLECT.NS','ISEC.NS','JUBLPHARMA.NS','LINDEINDIA.NS',
+  'LUXIND.NS','MRPL.NS','PFIZER.NS','RADICO.NS','RELAXO.NS',
+  'REDINGTON.NS','SEQUENT.NS','STAR.NS','TTKPRESTIG.NS','TEAMLEASE.NS',
+  'TIMKEN.NS','UCOBANK.NS','UNIONBANK.NS','NCC.NS','ENGINERSIN.NS',
+  'PNBHOUSING.NS','NLCINDIA.NS','APLLTD.NS','NIACL.NS','SHYAMMETL.NS'
+];
+
 // ─────────────────────────────────────────────
 //  ATR helper
 // ─────────────────────────────────────────────
@@ -1114,14 +1150,27 @@ function blackScholes(S, K, T, r, sigma, type) {
 }
 
 // ─────────────────────────────────────────────
-//  Route: Daily Top Picks (Nifty 50 scan)
+//  Route: Daily Top Picks (multi-universe scan)
 // ─────────────────────────────────────────────
 app.get('/api/daily-picks', async (req, res) => {
+  const universe = (req.query.universe || 'nifty50').toLowerCase();
+  let stockList, maxPicks;
+  if (universe === 'nifty200') {
+    stockList = [...NIFTY50, ...NIFTY_NEXT50, ...NIFTY_MIDCAP100];
+    maxPicks  = 20;
+  } else if (universe === 'nifty100') {
+    stockList = [...NIFTY50, ...NIFTY_NEXT50];
+    maxPicks  = 15;
+  } else {
+    stockList = NIFTY50;
+    maxPicks  = 12;
+  }
+
   const BATCH = 8;
   const results = [];
 
-  for (let i = 0; i < NIFTY50.length; i += BATCH) {
-    const batch = NIFTY50.slice(i, i + BATCH);
+  for (let i = 0; i < stockList.length; i += BATCH) {
+    const batch = stockList.slice(i, i + BATCH);
     const settled = await Promise.allSettled(batch.map(async (ticker) => {
       const period1 = new Date(Date.now() - 400 * 86400000).toISOString().split('T')[0];
       const [quote, hist] = await Promise.all([
@@ -1188,9 +1237,9 @@ app.get('/api/daily-picks', async (req, res) => {
   const picks = results
     .filter(r => r.score >= 1.0)
     .sort((a, b) => b.score - a.score)
-    .slice(0, 12);
+    .slice(0, maxPicks);
 
-  res.json({ picks, scanned: results.length, timestamp: new Date().toISOString() });
+  res.json({ picks, scanned: results.length, universe, timestamp: new Date().toISOString() });
 });
 
 // ─────────────────────────────────────────────

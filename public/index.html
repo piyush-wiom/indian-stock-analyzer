@@ -409,15 +409,23 @@
 <!-- ── PAGE: Daily Top Picks ── -->
 <div id="page-picks" class="page">
   <div class="page-title">📈 Daily Top Picks</div>
-  <div class="page-sub">Scans all Nifty 50 stocks and surfaces the best Buy/Strong Buy signals with entry, stop loss, and target.</div>
+  <div class="page-sub">Scans NIFTY stocks and surfaces the best Buy/Strong Buy signals with entry, stop loss, and target.</div>
 
-  <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:8px;">
-    <button class="btn" onclick="loadDailyPicks()" id="scanBtn">🔄 Scan Nifty 50</button>
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px;">
+    <div style="display:flex;align-items:center;gap:8px;background:white;border:1px solid var(--border);border-radius:10px;padding:6px 12px;">
+      <span style="font-size:13px;font-weight:600;color:var(--text2);white-space:nowrap;">Scan Universe:</span>
+      <select id="universeSelect" style="font-family:'DM Sans',sans-serif;font-size:13px;border:none;outline:none;background:transparent;color:var(--text);cursor:pointer;padding:2px 4px;">
+        <option value="nifty50">NIFTY 50 — 50 stocks (~30 sec)</option>
+        <option value="nifty100">NIFTY 100 — 100 stocks (~60 sec)</option>
+        <option value="nifty200">NIFTY 200 — 200 stocks (~2 min)</option>
+      </select>
+    </div>
+    <button class="btn" onclick="loadDailyPicks()" id="scanBtn">🔄 Scan Now</button>
     <span style="font-size:13px;color:var(--text2);" id="scanMeta"></span>
   </div>
 
   <div id="picksLoading" style="display:none;padding:40px;text-align:center;color:var(--text2);">
-    <div class="spinner"></div> Scanning 50 stocks — please wait ~30 seconds...
+    <div class="spinner"></div> <span id="picksLoadingMsg">Scanning 50 stocks — please wait ~30 seconds...</span>
   </div>
 
   <div id="picksResults" style="display:none;">
@@ -1717,21 +1725,28 @@ function toggleDetail(id, btn) {
 // ── Daily Top Picks ───────────────────────────────────────────────────────────
 async function loadDailyPicks() {
   const btn = document.getElementById('scanBtn');
+  const universe = document.getElementById('universeSelect')?.value || 'nifty50';
+  const timeEstimates = { nifty50: '~30 seconds', nifty100: '~60 seconds', nifty200: '~2 minutes' };
+  const countMap      = { nifty50: 50, nifty100: 100, nifty200: 200 };
+  const labelMap      = { nifty50: 'NIFTY 50', nifty100: 'NIFTY 100', nifty200: 'NIFTY 200' };
+
   btn.disabled = true; btn.textContent = '⏳ Scanning...';
   document.getElementById('picksLoading').style.display = 'block';
   document.getElementById('picksResults').style.display = 'none';
   document.getElementById('picksEmpty').style.display = 'none';
   document.getElementById('scanMeta').textContent = '';
+  document.getElementById('picksLoadingMsg').textContent =
+    `Scanning ${countMap[universe]} ${labelMap[universe]} stocks — please wait ${timeEstimates[universe]}...`;
 
   try {
-    const res = await fetch('/api/daily-picks');
+    const res = await fetch(`/api/daily-picks?universe=${universe}`);
     const data = await res.json();
     if (!res.ok || data.error) { showToast('❌ ' + (data.error || 'Error')); return; }
     renderDailyPicks(data);
   } catch(e) {
     showToast('🌐 Network error. Please try again.');
   } finally {
-    btn.disabled = false; btn.textContent = '🔄 Scan Nifty 50';
+    btn.disabled = false; btn.textContent = '🔄 Scan Now';
     document.getElementById('picksLoading').style.display = 'none';
   }
 }
