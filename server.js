@@ -1022,35 +1022,60 @@ function fetchJSON(url, opts = {}) {
 // ─────────────────────────────────────────────
 //  Route: MF Top 20 Picks
 // ─────────────────────────────────────────────
+// searchQuery = mfapi.in search term to auto-find correct Direct Growth scheme code
+// mustContain = keyword that MUST appear in scheme_name to confirm it's the right fund
 const TOP_FUNDS = [
   // Large Cap (10)
-  { code: 118834, name: 'Mirae Asset Large Cap',        category: 'Large Cap' },
-  { code: 120503, name: 'Axis Bluechip Fund',            category: 'Large Cap' },
-  { code: 119761, name: 'HDFC Top 100 Fund',             category: 'Large Cap' },
-  { code: 101624, name: 'Canara Robeco Bluechip Equity', category: 'Large Cap' },
-  { code: 120586, name: 'Kotak Bluechip Fund',           category: 'Large Cap' },
-  { code: 120465, name: 'ICICI Pru Bluechip Fund',       category: 'Large Cap' },
-  { code: 119522, name: 'SBI Bluechip Fund',             category: 'Large Cap' },
-  { code: 118701, name: 'Nippon India Large Cap Fund',   category: 'Large Cap' },
-  { code: 120684, name: 'UTI Mastershare Fund',          category: 'Large Cap' },
-  { code: 119230, name: 'DSP Top 100 Equity Fund',       category: 'Large Cap' },
+  { code: 118834, name: 'Mirae Asset Large Cap',        category: 'Large Cap', mustContain: 'mirae' },
+  { code: 120503, name: 'Axis Bluechip Fund',            category: 'Large Cap', mustContain: 'axis bluechip' },
+  { code: 119761, name: 'HDFC Top 100 Fund',             category: 'Large Cap', mustContain: 'hdfc top 100' },
+  { code: 101624, name: 'Canara Robeco Bluechip',        category: 'Large Cap', mustContain: 'canara robeco bluechip' },
+  { code: 120586, name: 'Kotak Bluechip Fund',           category: 'Large Cap', mustContain: 'kotak bluechip' },
+  { code: 120465, name: 'ICICI Pru Bluechip Fund',       category: 'Large Cap', mustContain: 'icici pru bluechip' },
+  { code: 119522, name: 'SBI Bluechip Fund',             category: 'Large Cap', mustContain: 'sbi bluechip' },
+  { code: 118701, name: 'Nippon India Large Cap',        category: 'Large Cap', mustContain: 'nippon india large cap' },
+  { code: 120684, name: 'UTI Mastershare Fund',          category: 'Large Cap', mustContain: 'uti mastershare' },
+  { code: 119230, name: 'DSP Top 100 Equity Fund',       category: 'Large Cap', mustContain: 'dsp top 100' },
   // Mid Cap (6)
-  { code: 120828, name: 'Quant Mid Cap Fund',            category: 'Mid Cap' },
-  { code: 119771, name: 'HDFC Mid-Cap Opportunities',   category: 'Mid Cap' },
-  { code: 120594, name: 'Kotak Emerging Equity Fund',   category: 'Mid Cap' },
-  { code: 118757, name: 'Nippon India Growth Fund',     category: 'Mid Cap' },
-  { code: 120505, name: 'Axis Midcap Fund',             category: 'Mid Cap' },
-  { code: 119533, name: 'SBI Magnum Midcap Fund',       category: 'Mid Cap' },
+  { code: 120828, name: 'Quant Mid Cap Fund',            category: 'Mid Cap',   mustContain: 'quant mid cap' },
+  { code: 0,      name: 'HDFC Mid-Cap Opportunities',    category: 'Mid Cap',   mustContain: 'hdfc mid-cap opportunities', searchQuery: 'HDFC Mid-Cap Opportunities Direct Growth' },
+  { code: 120594, name: 'Kotak Emerging Equity Fund',    category: 'Mid Cap',   mustContain: 'kotak emerging' },
+  { code: 0,      name: 'Nippon India Growth Fund',      category: 'Mid Cap',   mustContain: 'nippon india growth', searchQuery: 'Nippon India Growth Fund Direct Growth' },
+  { code: 120505, name: 'Axis Midcap Fund',              category: 'Mid Cap',   mustContain: 'axis midcap' },
+  { code: 0,      name: 'SBI Magnum Midcap Fund',        category: 'Mid Cap',   mustContain: 'sbi magnum midcap', searchQuery: 'SBI Magnum Mid Cap Direct Growth' },
   // Small Cap (4)
-  { code: 118778, name: 'Nippon India Small Cap Fund',  category: 'Small Cap' },
-  { code: 125494, name: 'SBI Small Cap Fund',           category: 'Small Cap' },
-  { code: 125354, name: 'Axis Small Cap Fund',          category: 'Small Cap' },
-  { code: 120829, name: 'Quant Small Cap Fund',         category: 'Small Cap' },
+  { code: 0,      name: 'Nippon India Small Cap',        category: 'Small Cap', mustContain: 'nippon india small cap', searchQuery: 'Nippon India Small Cap Direct Growth' },
+  { code: 0,      name: 'SBI Small Cap Fund',            category: 'Small Cap', mustContain: 'sbi small cap', searchQuery: 'SBI Small Cap Fund Direct Growth' },
+  { code: 0,      name: 'Axis Small Cap Fund',           category: 'Small Cap', mustContain: 'axis small cap', searchQuery: 'Axis Small Cap Fund Direct Growth' },
+  { code: 120829, name: 'Quant Small Cap Fund',          category: 'Small Cap', mustContain: 'quant small cap' },
 ];
+
+// Resolve correct scheme code: try hardcoded code first, fallback to name search
+async function resolveFundCode(fund) {
+  // If code provided, verify it matches mustContain
+  if (fund.code > 0) {
+    const data = await fetchJSON(`https://api.mfapi.in/mf/${fund.code}`);
+    if (data?.meta?.scheme_name?.toLowerCase().includes(fund.mustContain)) return { code: fund.code, data };
+  }
+  // Search by name, find Direct Growth plan
+  const query = fund.searchQuery || fund.name;
+  const results = await fetchJSON(`https://api.mfapi.in/mf/search?q=${encodeURIComponent(query)}`);
+  if (!results?.length) return null;
+  // Prefer Direct + Growth plan
+  const match = results.find(r => {
+    const n = r.schemeName.toLowerCase();
+    return n.includes(fund.mustContain) && n.includes('direct') && (n.includes('growth') || n.includes('gr'));
+  }) || results.find(r => r.schemeName.toLowerCase().includes(fund.mustContain));
+  if (!match) return null;
+  const data = await fetchJSON(`https://api.mfapi.in/mf/${match.schemeCode}`);
+  return data?.data?.length ? { code: match.schemeCode, data } : null;
+}
 
 app.get('/api/mf/top-picks', async (req, res) => {
   const results = await Promise.allSettled(TOP_FUNDS.map(async (fund) => {
-    const data = await fetchJSON(`https://api.mfapi.in/mf/${fund.code}`);
+    const resolved = await resolveFundCode(fund);
+    if (!resolved) return null;
+    const { code: resolvedCode, data } = resolved;
     if (!data?.data?.length) return null;
 
     const navData = [...data.data].reverse(); // oldest → newest
@@ -1108,7 +1133,7 @@ app.get('/api/mf/top-picks', async (req, res) => {
     const chartData = navData.map(d => ({ date: d.date, nav: parseFloat(d.nav) }));
 
     return {
-      code: fund.code,
+      code: resolvedCode,
       name: data.meta.scheme_name || fund.name,
       shortName: fund.name,
       category: fund.category,
