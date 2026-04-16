@@ -1066,6 +1066,8 @@ app.get('/api/mf/top-picks', async (req, res) => {
     const r3m = ret(Math.max(0, navs.length - 66));
     const r6m = ret(Math.max(0, navs.length - 130));
     const r1y = ret(Math.max(0, navs.length - 252));
+    const r3y = navs.length >= 756  ? ret(Math.max(0, navs.length - 756))  : null;
+    const r5y = navs.length >= 1260 ? ret(Math.max(0, navs.length - 1260)) : null;
 
     // Consistency: positive months over last 12
     let posMonths = 0;
@@ -1079,6 +1081,9 @@ app.get('/api/mf/top-picks', async (req, res) => {
     const rawScore = (r1y || 0) * 0.40 + (r6m || 0) * 0.25 + (r3m || 0) * 0.20 + (r1m || 0) * 0.15;
     const consistencyBonus = (posMonths / 12) * 5;
     const finalScore = +(rawScore + consistencyBonus).toFixed(1);
+
+    // Confidence % — normalised to 0–100 (25 pts = 100%)
+    const confidence = Math.min(100, Math.round(Math.max(0, finalScore) / 25 * 100));
 
     // 52W stats
     const last252 = navs.slice(-252);
@@ -1099,8 +1104,8 @@ app.get('/api/mf/top-picks', async (req, res) => {
     else if (navFromPeak < 15) { entryMode = 'SIP + Lumpsum';        entryColor = '#27AE60'; entryDetail = `${navFromPeak}% below peak — partial lumpsum ok`; }
     else                       { entryMode = 'Lumpsum Opportunity';  entryColor = '#8B0000'; entryDetail = `${navFromPeak}% correction — strong value entry`; }
 
-    // NAV history for chart (last 365 trading days)
-    const chartData = navData.slice(-365).map(d => ({ date: d.date, nav: parseFloat(d.nav) }));
+    // NAV history for chart (full history for 3Y/5Y chart support)
+    const chartData = navData.map(d => ({ date: d.date, nav: parseFloat(d.nav) }));
 
     return {
       code: fund.code,
@@ -1109,9 +1114,9 @@ app.get('/api/mf/top-picks', async (req, res) => {
       category: fund.category,
       fundHouse: data.meta.fund_house || '',
       currentNav: +currentNav.toFixed(4),
-      r1m, r3m, r6m, r1y,
+      r1m, r3m, r6m, r1y, r3y, r5y,
       w52High, w52Low, navFromPeak,
-      posMonths, finalScore,
+      posMonths, finalScore, confidence,
       signal, signalColor,
       entryMode, entryColor, entryDetail,
       chartData,

@@ -1861,18 +1861,25 @@ function renderMFPicks(picks) {
         </div>
       </div>
 
-      <!-- Returns grid -->
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:10px;">
-        ${[['1M', p.r1m], ['3M', p.r3m], ['6M', p.r6m], ['1Y', p.r1y]].map(([label, val]) => `
+      <!-- Returns grid — 6 columns: 1M 3M 6M 1Y 3Y 5Y -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:4px;">
+        ${[['1M', p.r1m], ['3M', p.r3m], ['6M', p.r6m]].map(([label, val]) => `
         <div style="background:var(--surface2);border-radius:6px;padding:6px;text-align:center;">
           <div style="font-size:10px;color:var(--text3);">${label}</div>
           <div style="font-size:12px;font-weight:700;color:${retColor(val)};">${retFmt(val)}</div>
         </div>`).join('')}
       </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:10px;">
+        ${[['1Y', p.r1y], ['3Y', p.r3y], ['5Y', p.r5y]].map(([label, val]) => `
+        <div style="background:${label==='3Y'||label==='5Y'?'#EEF4FF':'var(--surface2)'};border-radius:6px;padding:6px;text-align:center;${label==='3Y'||label==='5Y'?'border:1px solid #C8D9F5;':''}">
+          <div style="font-size:10px;color:${label==='3Y'||label==='5Y'?'#185FA5':'var(--text3)'};">${label}</div>
+          <div style="font-size:12px;font-weight:700;color:${val==null?'var(--text3)':retColor(val)};">${val==null?'N/A':retFmt(val)}</div>
+        </div>`).join('')}
+      </div>
 
-      <!-- Signal + Entry Mode -->
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
-        <span style="background:${p.signalColor}18;color:${p.signalColor};border:1px solid ${p.signalColor}44;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;">${p.signal}</span>
+      <!-- Signal + Confidence + Entry Mode -->
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+        <span style="background:${p.signalColor};color:white;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;">${p.signal} &nbsp;${p.confidence}%</span>
         <span style="background:${p.entryColor}15;color:${p.entryColor};border:1px solid ${p.entryColor}44;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500;">💡 ${p.entryMode}</span>
       </div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:10px;">📌 ${p.entryDetail}</div>
@@ -1880,10 +1887,10 @@ function renderMFPicks(picks) {
       <!-- Score bar -->
       <div style="margin-bottom:10px;">
         <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:3px;">
-          <span>Fund Score</span><span style="font-weight:600;color:${p.signalColor};">${p.finalScore} pts &nbsp;•&nbsp; ${p.posMonths}/12 positive months</span>
+          <span>Confidence</span><span style="font-weight:600;color:${p.signalColor};">${p.confidence}% &nbsp;•&nbsp; ${p.posMonths}/12 positive months</span>
         </div>
         <div style="background:#F0F0F0;border-radius:6px;height:5px;">
-          <div style="width:${scoreBar}%;background:${p.signalColor};height:5px;border-radius:6px;"></div>
+          <div style="width:${p.confidence}%;background:${p.signalColor};height:5px;border-radius:6px;"></div>
         </div>
       </div>
 
@@ -1892,10 +1899,12 @@ function renderMFPicks(picks) {
         📊 View NAV Chart
       </button>
       <div id="mf-chart-${p.code}" style="display:none;margin-top:12px;">
-        <div style="display:flex;gap:4px;margin-bottom:8px;">
-          ${['1M','3M','6M','1Y'].map((p2,i) => `<button class="period-btn${i===3?' active':''}" onclick="renderMFChart(${p.code},'${p2}',this)">${p2}</button>`).join('')}
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;">
+          ${[['1M',0],['3M',0],['6M',0],['1Y',0],['3Y',0],['5Y',1]].map(([p2,active]) =>
+            `<button class="period-btn${active?' active':''}" onclick="renderMFChart(${p.code},'${p2}',this)">${p2}</button>`
+          ).join('')}
         </div>
-        <div id="mf-plotly-${p.code}" style="width:100%;height:200px;"></div>
+        <div id="mf-plotly-${p.code}" style="width:100%;height:220px;"></div>
       </div>
     </div>`;
   }).join('');
@@ -1921,7 +1930,7 @@ function renderMFChart(code, period, activeBtnEl) {
   container.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
   if (activeBtnEl) activeBtnEl.classList.add('active');
 
-  const daysMap = { '1M': 22, '3M': 66, '6M': 130, '1Y': 252 };
+  const daysMap = { '1M': 22, '3M': 66, '6M': 130, '1Y': 252, '3Y': 756, '5Y': 1260 };
   const days = daysMap[period] || 252;
   const slice = fund.chartData.slice(-days);
   const dates = slice.map(d => d.date);
