@@ -1312,9 +1312,9 @@ app.get('/api/financials/:ticker', async (req, res) => {
 const NSE_INDEX_SYMBOLS = { '^NSEI': 'NIFTY', '^NSEBANK': 'BANKNIFTY' };
 
 // Calculate upcoming expiry dates without NSE API
-// NIFTY: every Thursday | BANKNIFTY: every Wednesday
+// NIFTY: every Tuesday (NSE changed from Thu) | BANKNIFTY: every Wednesday
 function getNearestExpiries(symbol, count = 6) {
-  const expiryDay = symbol === 'BANKNIFTY' ? 3 : 4; // 3=Wed, 4=Thu
+  const expiryDay = symbol === 'BANKNIFTY' ? 3 : 2; // 3=Wed, 2=Tue
   const expiries = [];
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -1346,7 +1346,7 @@ function generateNseSymbol(indexName, expiryLabel, strike, type) {
   // Weekly month chars: 1-9 = Jan-Sep, O = Oct, N = Nov, D = Dec
   const weeklyM = ['1','2','3','4','5','6','7','8','9','O','N','D'][month];
 
-  // Determine if this is the monthly expiry (last Thursday/Wednesday of month)
+  // Determine if this is the monthly expiry (last Tuesday/Wednesday of month)
   const nextWeek = new Date(d);
   nextWeek.setDate(d.getDate() + 7);
   const isMonthly = nextWeek.getMonth() !== d.getMonth();
