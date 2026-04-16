@@ -1019,6 +1019,113 @@ function fetchJSON(url, opts = {}) {
   });
 }
 
+// ─────────────────────────────────────────────
+//  Route: MF Top 20 Picks
+// ─────────────────────────────────────────────
+const TOP_FUNDS = [
+  // Large Cap (10)
+  { code: 118834, name: 'Mirae Asset Large Cap',        category: 'Large Cap' },
+  { code: 120503, name: 'Axis Bluechip Fund',            category: 'Large Cap' },
+  { code: 119761, name: 'HDFC Top 100 Fund',             category: 'Large Cap' },
+  { code: 101624, name: 'Canara Robeco Bluechip Equity', category: 'Large Cap' },
+  { code: 120586, name: 'Kotak Bluechip Fund',           category: 'Large Cap' },
+  { code: 120465, name: 'ICICI Pru Bluechip Fund',       category: 'Large Cap' },
+  { code: 119522, name: 'SBI Bluechip Fund',             category: 'Large Cap' },
+  { code: 118701, name: 'Nippon India Large Cap Fund',   category: 'Large Cap' },
+  { code: 120684, name: 'UTI Mastershare Fund',          category: 'Large Cap' },
+  { code: 119230, name: 'DSP Top 100 Equity Fund',       category: 'Large Cap' },
+  // Mid Cap (6)
+  { code: 120828, name: 'Quant Mid Cap Fund',            category: 'Mid Cap' },
+  { code: 119771, name: 'HDFC Mid-Cap Opportunities',   category: 'Mid Cap' },
+  { code: 120594, name: 'Kotak Emerging Equity Fund',   category: 'Mid Cap' },
+  { code: 118757, name: 'Nippon India Growth Fund',     category: 'Mid Cap' },
+  { code: 120505, name: 'Axis Midcap Fund',             category: 'Mid Cap' },
+  { code: 119533, name: 'SBI Magnum Midcap Fund',       category: 'Mid Cap' },
+  // Small Cap (4)
+  { code: 118778, name: 'Nippon India Small Cap Fund',  category: 'Small Cap' },
+  { code: 125494, name: 'SBI Small Cap Fund',           category: 'Small Cap' },
+  { code: 125354, name: 'Axis Small Cap Fund',          category: 'Small Cap' },
+  { code: 120829, name: 'Quant Small Cap Fund',         category: 'Small Cap' },
+];
+
+app.get('/api/mf/top-picks', async (req, res) => {
+  const results = await Promise.allSettled(TOP_FUNDS.map(async (fund) => {
+    const data = await fetchJSON(`https://api.mfapi.in/mf/${fund.code}`);
+    if (!data?.data?.length) return null;
+
+    const navData = [...data.data].reverse(); // oldest → newest
+    const navs    = navData.map(d => parseFloat(d.nav)).filter(v => !isNaN(v));
+    if (navs.length < 30) return null;
+    const currentNav = navs[navs.length - 1];
+
+    const ret = (fromIdx) => {
+      const from = navs[fromIdx];
+      return from > 0 ? +((currentNav - from) / from * 100).toFixed(2) : null;
+    };
+    const r1m = ret(Math.max(0, navs.length - 22));
+    const r3m = ret(Math.max(0, navs.length - 66));
+    const r6m = ret(Math.max(0, navs.length - 130));
+    const r1y = ret(Math.max(0, navs.length - 252));
+
+    // Consistency: positive months over last 12
+    let posMonths = 0;
+    for (let i = 0; i < 12; i++) {
+      const end   = navs[navs.length - 1 - i * 22];
+      const start = navs[navs.length - 1 - (i + 1) * 22];
+      if (start && end && end > start) posMonths++;
+    }
+
+    // Composite score
+    const rawScore = (r1y || 0) * 0.40 + (r6m || 0) * 0.25 + (r3m || 0) * 0.20 + (r1m || 0) * 0.15;
+    const consistencyBonus = (posMonths / 12) * 5;
+    const finalScore = +(rawScore + consistencyBonus).toFixed(1);
+
+    // 52W stats
+    const last252 = navs.slice(-252);
+    const w52High = +Math.max(...last252).toFixed(2);
+    const w52Low  = +Math.min(...last252).toFixed(2);
+    const navFromPeak = +((w52High - currentNav) / w52High * 100).toFixed(1);
+
+    // Signal
+    let signal, signalColor;
+    if      (finalScore >= 18) { signal = 'Strong Invest';           signalColor = '#00A36C'; }
+    else if (finalScore >= 10) { signal = 'Good Entry';              signalColor = '#2ECC71'; }
+    else if (finalScore >= 4)  { signal = 'SIP Only — Watch';        signalColor = '#F39C12'; }
+    else                       { signal = 'Avoid / Underperforming'; signalColor = '#E74C3C'; }
+
+    // Lumpsum vs SIP
+    let entryMode, entryDetail, entryColor;
+    if      (navFromPeak < 5)  { entryMode = 'SIP Only';             entryColor = '#185FA5'; entryDetail = 'NAV near 52W high — average in slowly'; }
+    else if (navFromPeak < 15) { entryMode = 'SIP + Lumpsum';        entryColor = '#27AE60'; entryDetail = `${navFromPeak}% below peak — partial lumpsum ok`; }
+    else                       { entryMode = 'Lumpsum Opportunity';  entryColor = '#8B0000'; entryDetail = `${navFromPeak}% correction — strong value entry`; }
+
+    // NAV history for chart (last 365 trading days)
+    const chartData = navData.slice(-365).map(d => ({ date: d.date, nav: parseFloat(d.nav) }));
+
+    return {
+      code: fund.code,
+      name: data.meta.scheme_name || fund.name,
+      shortName: fund.name,
+      category: fund.category,
+      fundHouse: data.meta.fund_house || '',
+      currentNav: +currentNav.toFixed(4),
+      r1m, r3m, r6m, r1y,
+      w52High, w52Low, navFromPeak,
+      posMonths, finalScore,
+      signal, signalColor,
+      entryMode, entryColor, entryDetail,
+      chartData,
+    };
+  }));
+
+  const picks = results
+    .filter(r => r.status === 'fulfilled' && r.value)
+    .map(r => r.value)
+    .sort((a, b) => b.finalScore - a.finalScore);
+
+  res.json({ picks, timestamp: new Date().toISOString() });
+});
+
 app.get('/api/mf/search', async (req, res) => {
   const q = (req.query.q || '').toLowerCase().trim();
   if (q.length < 2) return res.json([]);

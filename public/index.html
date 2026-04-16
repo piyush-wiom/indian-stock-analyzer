@@ -165,6 +165,9 @@
   .mf-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
   .mf-tab { padding: 10px 20px; border: none; background: transparent; cursor: pointer; font-size: 14px; font-weight: 500; color: var(--text2); border-bottom: 2.5px solid transparent; transition: all 0.15s; font-family: inherit; }
   .mf-tab.active { color: var(--blue); border-bottom-color: var(--blue); font-weight: 600; }
+  .mf-filter-btn { padding: 5px 14px; border: 1px solid var(--border); border-radius: 20px; background: white; cursor: pointer; font-size: 12px; font-weight: 500; color: var(--text2); font-family: inherit; transition: all 0.15s; }
+  .mf-filter-btn.active { background: var(--blue); color: white; border-color: var(--blue); }
+  .mf-filter-btn:hover:not(.active) { background: var(--surface2); }
 
   .accordion { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 10px; overflow: hidden; }
   .accordion-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; cursor: pointer; background: var(--surface); font-weight: 600; font-size: 14px; }
@@ -575,6 +578,7 @@
 
   <div class="mf-tabs">
     <button class="mf-tab active" onclick="showMfTab('edu',this)">📚 Education</button>
+    <button class="mf-tab" onclick="showMfTab('picks',this);loadMFPicksOnce()">🏆 Top 20 Picks</button>
     <button class="mf-tab" onclick="showMfTab('nav',this)">🔎 Live NAV Search</button>
   </div>
 
@@ -699,6 +703,30 @@
           <tr><td>ELSS (Tax Saver)</td><td><span class="badge" style="background:#FDEDEC;color:#E74C3C;">Med-High</span></td><td>Tax saving</td><td>₹500/mo</td><td>Section 80C benefit. 3-year lock-in.</td></tr>
         </table>
       </div>
+    </div>
+  </div>
+
+  <!-- ── MF Top 20 Picks Tab ── -->
+  <div id="mf-picks" class="mf-tab-content" style="display:none;">
+
+    <!-- Filter + Refresh bar -->
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+      <span style="font-size:13px;font-weight:600;color:var(--text2);">Filter:</span>
+      <button class="mf-filter-btn active" onclick="filterMFPicks('all',this)">All 20</button>
+      <button class="mf-filter-btn" onclick="filterMFPicks('Large Cap',this)">🔵 Large Cap</button>
+      <button class="mf-filter-btn" onclick="filterMFPicks('Mid Cap',this)">🟡 Mid Cap</button>
+      <button class="mf-filter-btn" onclick="filterMFPicks('Small Cap',this)">🔴 Small Cap</button>
+      <button class="btn btn-outline btn-sm" id="mfPicksBtn" onclick="loadMFPicks()" style="margin-left:auto;">🔄 Refresh</button>
+    </div>
+
+    <div id="mfPicksLoading" style="display:none;padding:40px;text-align:center;color:var(--text2);">
+      <div class="spinner"></div> Loading Top 20 Mutual Funds — please wait...
+    </div>
+    <div id="mfPicksMeta" style="font-size:13px;color:var(--text3);margin-bottom:12px;"></div>
+    <div id="mfPicksGrid" class="picks-grid"></div>
+
+    <div class="disclaimer" style="margin-top:16px;">
+      ⚠️ Fund scores are based on NAV momentum & consistency. Not SEBI-registered advice. Past performance does not guarantee future returns.
     </div>
   </div>
 
@@ -1751,6 +1779,170 @@ async function loadDailyPicks() {
   }
 }
 
+// ── MF Top 20 Picks ──────────────────────────────────────────────────────────
+let _mfPicksData = null;
+let _mfPicksLoaded = false;
+
+function loadMFPicksOnce() {
+  if (!_mfPicksLoaded) loadMFPicks();
+}
+
+async function loadMFPicks() {
+  _mfPicksLoaded = true;
+  const btn = document.getElementById('mfPicksBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Loading...'; }
+  document.getElementById('mfPicksLoading').style.display = 'block';
+  document.getElementById('mfPicksGrid').innerHTML = '';
+  document.getElementById('mfPicksMeta').textContent = '';
+
+  try {
+    const res = await fetch('/api/mf/top-picks');
+    const data = await res.json();
+    if (!res.ok || data.error) { showToast('❌ ' + (data.error || 'Error loading funds')); return; }
+    _mfPicksData = data;
+    filterMFPicks('all', document.querySelector('.mf-filter-btn.active'));
+    const ts = new Date(data.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    document.getElementById('mfPicksMeta').textContent = `${data.picks.length} funds loaded • ${ts}`;
+  } catch(e) {
+    showToast('🌐 Network error loading MF picks. Try again.');
+  } finally {
+    document.getElementById('mfPicksLoading').style.display = 'none';
+    if (btn) { btn.disabled = false; btn.textContent = '🔄 Refresh'; }
+  }
+}
+
+function filterMFPicks(category, btnEl) {
+  document.querySelectorAll('.mf-filter-btn').forEach(b => b.classList.remove('active'));
+  if (btnEl) btnEl.classList.add('active');
+  if (!_mfPicksData) return;
+  const filtered = category === 'all'
+    ? _mfPicksData.picks
+    : _mfPicksData.picks.filter(p => p.category === category);
+  renderMFPicks(filtered);
+}
+
+function renderMFPicks(picks) {
+  if (!picks.length) {
+    document.getElementById('mfPicksGrid').innerHTML = '<div class="disclaimer">No funds found for this filter.</div>';
+    return;
+  }
+  const catColors = { 'Large Cap': '#185FA5', 'Mid Cap': '#856404', 'Small Cap': '#A32D2D' };
+  const catBg     = { 'Large Cap': '#E6F1FB', 'Mid Cap': '#FAEEDA', 'Small Cap': '#FCEBEB' };
+
+  document.getElementById('mfPicksGrid').innerHTML = picks.map(p => {
+    const retColor = v => v == null ? 'var(--text3)' : v >= 0 ? '#27AE60' : '#E74C3C';
+    const retFmt   = v => v == null ? '—' : (v > 0 ? '+' : '') + v + '%';
+    const scoreBar = Math.min(100, Math.max(0, Math.round((p.finalScore / 25) * 100)));
+    const w52Pct   = p.w52High > p.w52Low
+      ? +((p.currentNav - p.w52Low) / (p.w52High - p.w52Low) * 100).toFixed(1) : 50;
+
+    return `
+    <div class="pick-card" id="mf-card-${p.code}">
+      <div class="pick-header">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:700;line-height:1.3;margin-bottom:3px;">${p.shortName}</div>
+          <div style="font-size:11px;color:var(--text3);">${p.fundHouse}</div>
+        </div>
+        <span style="background:${catBg[p.category]};color:${catColors[p.category]};padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap;">${p.category}</span>
+      </div>
+
+      <!-- NAV + 52W range -->
+      <div style="margin:10px 0 8px;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
+          <span style="font-size:18px;font-weight:700;">₹${p.currentNav.toLocaleString('en-IN')}</span>
+          <span style="font-size:11px;color:var(--text3);">${p.navFromPeak}% below 52W high</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-bottom:3px;">
+          <span>52W Low ₹${p.w52Low.toLocaleString('en-IN')}</span>
+          <span>52W High ₹${p.w52High.toLocaleString('en-IN')}</span>
+        </div>
+        <div style="background:#E8E8E8;border-radius:4px;height:5px;">
+          <div style="width:${w52Pct}%;background:${w52Pct<=30?'#E74C3C':w52Pct>=70?'#2ECC71':'#F39C12'};height:5px;border-radius:4px;"></div>
+        </div>
+      </div>
+
+      <!-- Returns grid -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:10px;">
+        ${[['1M', p.r1m], ['3M', p.r3m], ['6M', p.r6m], ['1Y', p.r1y]].map(([label, val]) => `
+        <div style="background:var(--surface2);border-radius:6px;padding:6px;text-align:center;">
+          <div style="font-size:10px;color:var(--text3);">${label}</div>
+          <div style="font-size:12px;font-weight:700;color:${retColor(val)};">${retFmt(val)}</div>
+        </div>`).join('')}
+      </div>
+
+      <!-- Signal + Entry Mode -->
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+        <span style="background:${p.signalColor}18;color:${p.signalColor};border:1px solid ${p.signalColor}44;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;">${p.signal}</span>
+        <span style="background:${p.entryColor}15;color:${p.entryColor};border:1px solid ${p.entryColor}44;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500;">💡 ${p.entryMode}</span>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:10px;">📌 ${p.entryDetail}</div>
+
+      <!-- Score bar -->
+      <div style="margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:3px;">
+          <span>Fund Score</span><span style="font-weight:600;color:${p.signalColor};">${p.finalScore} pts &nbsp;•&nbsp; ${p.posMonths}/12 positive months</span>
+        </div>
+        <div style="background:#F0F0F0;border-radius:6px;height:5px;">
+          <div style="width:${scoreBar}%;background:${p.signalColor};height:5px;border-radius:6px;"></div>
+        </div>
+      </div>
+
+      <!-- Chart toggle button -->
+      <button class="btn btn-outline btn-sm" style="width:100%;" onclick="toggleMFChart(${p.code},this)">
+        📊 View NAV Chart
+      </button>
+      <div id="mf-chart-${p.code}" style="display:none;margin-top:12px;">
+        <div style="display:flex;gap:4px;margin-bottom:8px;">
+          ${['1M','3M','6M','1Y'].map((p2,i) => `<button class="period-btn${i===3?' active':''}" onclick="renderMFChart(${p.code},'${p2}',this)">${p2}</button>`).join('')}
+        </div>
+        <div id="mf-plotly-${p.code}" style="width:100%;height:200px;"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleMFChart(code, btn) {
+  const el = document.getElementById(`mf-chart-${code}`);
+  if (el.style.display === 'none') {
+    el.style.display = 'block';
+    btn.textContent = '📊 Hide Chart';
+    renderMFChart(code, '1Y', el.querySelector('.period-btn.active'));
+  } else {
+    el.style.display = 'none';
+    btn.textContent = '📊 View NAV Chart';
+  }
+}
+
+function renderMFChart(code, period, activeBtnEl) {
+  const fund = _mfPicksData?.picks?.find(p => p.code === code);
+  if (!fund) return;
+  // Update active button
+  const container = document.getElementById(`mf-chart-${code}`);
+  container.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+  if (activeBtnEl) activeBtnEl.classList.add('active');
+
+  const daysMap = { '1M': 22, '3M': 66, '6M': 130, '1Y': 252 };
+  const days = daysMap[period] || 252;
+  const slice = fund.chartData.slice(-days);
+  const dates = slice.map(d => d.date);
+  const navs  = slice.map(d => d.nav);
+  const color = fund.signalColor;
+
+  Plotly.newPlot(`mf-plotly-${code}`, [{
+    type: 'scatter', x: dates, y: navs,
+    line: { color, width: 2 }, fill: 'tozeroy',
+    fillcolor: color + '18', showlegend: false,
+    hovertemplate: 'NAV: ₹%{y:.2f}<extra></extra>'
+  }], {
+    height: 200, paper_bgcolor: 'white', plot_bgcolor: '#FAFAFA',
+    margin: { l: 50, r: 10, t: 10, b: 30 },
+    font: { family: 'DM Sans', size: 11 },
+    yaxis: { gridcolor: '#F0F0F0', tickprefix: '₹' },
+    xaxis: { gridcolor: '#F0F0F0' }
+  }, { responsive: true, displayModeBar: false });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 function renderDailyPicks(data) {
   const { picks, scanned, timestamp } = data;
   const ts = new Date(timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
