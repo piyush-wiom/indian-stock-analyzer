@@ -1456,6 +1456,10 @@ function getNearestExpiries(symbol, count = 6) {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
   let checked = 0;
+  // Check today first — if today is expiry day, include it
+  if (d.getDay() === expiryDay) {
+    expiries.push(d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '-'));
+  }
   while (expiries.length < count && checked < 90) {
     d.setDate(d.getDate() + 1);
     checked++;
