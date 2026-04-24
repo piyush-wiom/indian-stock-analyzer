@@ -199,7 +199,17 @@ function portfolioDecision(techScore, pnlPct, ind, currentPrice, buyPrice, week5
   const rsi = ind.rsi.value;
 
   // ── Computed values ──────────────────────────
-  const stopLoss = +Math.max(buyPrice * 0.88, currentPrice * 0.93).toFixed(2);
+  // Stop loss MUST always be below current price.
+  // In profit  → trail from buy price OR 7% below current (whichever is higher — protects gains)
+  // In loss    → 7% below current price only (buy price is already above current — irrelevant)
+  let stopLoss;
+  if (currentPrice >= buyPrice) {
+    // In profit: protect capital — SL = higher of buy price or 7% below current
+    stopLoss = +Math.max(buyPrice, currentPrice * 0.93).toFixed(2);
+  } else {
+    // In loss: SL purely based on current price — must be below it
+    stopLoss = +(currentPrice * 0.93).toFixed(2);
+  }
 
   let targetPrice;
   if (sma200 && currentPrice < sma200) {
