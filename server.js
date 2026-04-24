@@ -876,11 +876,15 @@ app.post('/api/portfolio', upload.single('file'), async (req, res) => {
       const ticker = resolveTicker(h.ticker);
       row.ticker = ticker.replace(/\.(NS|BO)$/, '');
 
-      let quote = null;
-      try { quote = await yf.quote(ticker); } catch (_) {}
-
+      // Fetch all data in parallel for speed
       const period1 = new Date(); period1.setFullYear(period1.getFullYear() - 1);
-      const chart = await yf.chart(ticker, { period1, interval: '1d' });
+      const [quote, chart, fsData, searchData] = await Promise.all([
+        yf.quote(ticker, {}, { validateResult: false }).catch(() => null),
+        yf.chart(ticker, { period1, interval: '1d' }, { validateResult: false }),
+        yf.quoteSummary(ticker, { modules: ['financialData'] }, { validateResult: false }).catch(() => null),
+        yf.search(ticker, { newsCount: 3 }, { validateResult: false }).catch(() => null),
+      ]);
+
       const hist  = chart.quotes || [];
       if (hist.length < 30) throw new Error('Insufficient historical data');
 
@@ -909,6 +913,41 @@ app.post('/api/portfolio', upload.single('file'), async (req, res) => {
       row.maCross        = ind.movingAverages.crossType === 'golden' ? 'Golden Cross' : ind.movingAverages.crossType === 'death' ? 'Death Cross' : 'Neutral';
 
       row.decision = portfolioDecision(ind.totalScore, row.pnlPct, ind, cp, h.buyPrice, quote?.fiftyTwoWeekHigh || null);
+
+      // ── Fundamentals ──────────────────────────
+      const fd = fsData?.financialData;
+      const w52Low  = quote?.fiftyTwoWeekLow  || null;
+      const w52High = quote?.fiftyTwoWeekHigh || null;
+      const w52Range = (w52Low && w52High && w52High > w52Low) ? w52High - w52Low : null;
+      const w52Pos  = w52Range ? +((cp - w52Low) / w52Range * 100).toFixed(0) : null;
+      let w52Label = null;
+      if (w52Pos !== null) {
+        if      (w52Pos <= 15) w52Label = '🟢 Near 52W Low — Potential Value Zone';
+        else if (w52Pos <= 35) w52Label = '🔵 In Lower Range — Watch for entry';
+        else if (w52Pos <= 65) w52Label = '⚪ Mid Range';
+        else if (w52Pos <= 85) w52Label = '🟡 In Upper Range — Be selective';
+        else                   w52Label = '🔴 Near 52W High — Risk of correction';
+      }
+      row.fundamentals = {
+        pe:             quote?.trailingPE         ? +quote.trailingPE.toFixed(1)       : null,
+        pb:             quote?.priceToBook        ? +quote.priceToBook.toFixed(2)      : null,
+        debtToEquity:   fd?.debtToEquity          ? +fd.debtToEquity.toFixed(1)        : null,
+        revenueGrowth:  fd?.revenueGrowth         ? +(fd.revenueGrowth * 100).toFixed(1) : null,
+        week52Low:      w52Low  ? +w52Low.toFixed(2)  : null,
+        week52High:     w52High ? +w52High.toFixed(2) : null,
+        week52Position: w52Pos,
+        week52Label:    w52Label,
+      };
+
+      // ── News (latest 3 headlines) ─────────────
+      row.news = (searchData?.news || []).slice(0, 3).map(n => ({
+        title:     n.title     || '',
+        publisher: n.publisher || '',
+        link:      n.link      || '#',
+        age:       n.providerPublishTime
+          ? Math.round((Date.now() / 1000 - n.providerPublishTime) / 3600)
+          : null,
+      }));
     } catch (e) {
       row.error = e.message.includes('Insufficient') ? 'Not enough data' : e.message.slice(0, 80);
       row.decision = { action: 'ERROR', urgency: 'LOW', actionColor: '#888', urgencyBadge: '⚪ N/A', timeHorizon: 'N/A', reasoning: [row.error], stopLoss: null, targetPrice: null, averageAt: null, breakEvenGainPct: 0, riskRewardRatio: 0 };

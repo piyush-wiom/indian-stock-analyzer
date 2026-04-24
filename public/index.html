@@ -258,6 +258,10 @@
   .detail-panel.open { display: block; }
   .dca-ladder { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
   .dca-pill { background: var(--blue-lt); color: var(--blue); padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; font-family: 'DM Mono', monospace; }
+  .fund-pill { background: #F1EFE8; color: var(--text); padding: 3px 10px; border-radius: 20px; font-size: 11px; border: 1px solid var(--border); }
+  .fund-pill-good { background: var(--green-lt); color: var(--green); border-color: var(--green-md); }
+  .fund-pill-bad  { background: var(--red-lt);   color: var(--red);   border-color: var(--red-md);  }
+  .fund-pill-warn { background: var(--amber-lt); color: var(--amber); border-color: var(--amber-md); }
 
   /* Daily Picks */
   .picks-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(320px,1fr)); gap: 16px; margin-top: 20px; }
@@ -1696,19 +1700,70 @@ function renderPortfolioResults(data) {
     const reasonHtml = (dec.reasoning || []).map(x => `<li>${x}</li>`).join('');
     const isImportant = dec.urgency === 'CRITICAL' || dec.urgency === 'HIGH';
 
+    // ── Fundamentals panel ──
+    const fu = r.fundamentals || {};
+    const fundPills = [
+      fu.pe            != null ? `<span class="fund-pill" title="Price-to-Earnings ratio">PE: <b>${fu.pe}</b></span>` : '',
+      fu.pb            != null ? `<span class="fund-pill" title="Price-to-Book ratio">P/B: <b>${fu.pb}</b></span>` : '',
+      fu.debtToEquity  != null ? `<span class="fund-pill ${fu.debtToEquity > 100 ? 'fund-pill-warn' : ''}" title="Debt-to-Equity ratio">D/E: <b>${fu.debtToEquity}%</b></span>` : '',
+      fu.revenueGrowth != null ? `<span class="fund-pill ${fu.revenueGrowth >= 0 ? 'fund-pill-good' : 'fund-pill-bad'}" title="YoY Revenue Growth">Rev Growth: <b>${fu.revenueGrowth >= 0 ? '+' : ''}${fu.revenueGrowth}%</b></span>` : '',
+    ].filter(Boolean).join('');
+
+    const w52Html = (fu.week52Low && fu.week52High && fu.week52Position != null) ? `
+      <div style="margin-top:10px;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:3px;">
+          <span>52W Low ₹${fu.week52Low.toLocaleString('en-IN')}</span>
+          <span style="font-weight:600;color:var(--text);">${fu.week52Label || ''}</span>
+          <span>52W High ₹${fu.week52High.toLocaleString('en-IN')}</span>
+        </div>
+        <div style="height:6px;background:#F1EFE8;border-radius:4px;position:relative;">
+          <div style="position:absolute;left:0;top:0;height:100%;width:${fu.week52Position}%;background:${fu.week52Position <= 30 ? '#3B6D11' : fu.week52Position >= 80 ? '#A32D2D' : '#185FA5'};border-radius:4px;transition:width 0.4s;"></div>
+          <div style="position:absolute;top:-3px;width:12px;height:12px;border-radius:50%;background:white;border:2px solid #185FA5;left:calc(${fu.week52Position}% - 6px);"></div>
+        </div>
+        <div style="text-align:center;font-size:11px;color:var(--text3);margin-top:2px;">${fu.week52Position}% from 52W Low</div>
+      </div>` : '';
+
+    // ── News panel ──
+    const newsHtml = (r.news && r.news.length) ? `
+      <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">📰 Latest News</div>
+        ${r.news.map(n => `
+          <div style="margin-bottom:6px;">
+            <a href="${n.link}" target="_blank" rel="noopener"
+               style="font-size:12px;color:var(--text);text-decoration:none;line-height:1.4;display:block;"
+               onmouseover="this.style.color='#185FA5'" onmouseout="this.style.color='var(--text)'">
+              ${n.title}
+            </a>
+            <span style="font-size:10px;color:var(--text3);">${n.publisher}${n.age != null ? ' · ' + (n.age < 24 ? n.age + 'h ago' : Math.round(n.age/24) + 'd ago') : ''}</span>
+          </div>`).join('')}
+      </div>` : '';
+
+    // ── Disclaimer ──
+    const disclaimerHtml = `<div style="margin-top:8px;padding:6px 10px;background:#FFF8E1;border-left:3px solid #F39C12;border-radius:4px;font-size:11px;color:#854F0B;">
+      ⚠️ <b>Technical analysis only.</b> Always verify fundamentals & recent news before acting on any suggestion.
+    </div>`;
+
     return `<tr>
       <td>
         <b>${r.company || r.ticker}</b>
-        ${isImportant ? `<button class="expand-btn" onclick="toggleDetail('detail-${i}',this)">▼ Details</button>
+        ${isImportant ? '<span style="display:inline-block;margin-left:6px;font-size:10px;padding:1px 6px;background:#FCEBEB;color:#A32D2D;border-radius:10px;font-weight:600;">⚠️ Action needed</span>' : ''}
+        <button class="expand-btn" onclick="toggleDetail('detail-${i}',this)">▼ Details</button>
         <div class="detail-panel" id="detail-${i}">
-          <ul style="margin-left:16px;">${reasonHtml}</ul>
+          ${fundPills ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">${fundPills}</div>` : ''}
+          ${w52Html}
+          <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">📊 Technical Reasoning</div>
+            <ul style="margin-left:16px;font-size:12px;">${reasonHtml}</ul>
+          </div>
           ${dec.averageAt ? `<div style="margin-top:8px;font-weight:600;font-size:12px;">DCA Ladder:</div><div class="dca-ladder">${dcaHtml}</div>` : ''}
           <div style="margin-top:8px;font-size:12px;">
             <span style="color:#E74C3C;font-weight:600;">Stop Loss: ${fmtINR(dec.stopLoss)}</span> &nbsp;|&nbsp;
             <span style="color:#2ECC71;font-weight:600;">Target: ${fmtINR(dec.targetPrice)}</span> &nbsp;|&nbsp;
             <span style="color:var(--text2);">R:R = ${dec.riskRewardRatio ? dec.riskRewardRatio.toFixed(2) + ':1' : '—'}</span>
           </div>
-        </div>` : ''}
+          ${newsHtml}
+          ${disclaimerHtml}
+        </div>
       </td>
       <td style="font-family:'DM Mono',monospace;font-size:12px;">${r.ticker}</td>
       <td>${fmtINR(r.buyPrice)}</td>
