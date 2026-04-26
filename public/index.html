@@ -322,9 +322,9 @@
 
   @media (max-width: 1024px) {
     /* Layout */
-    .sidebar { display: none; }
-    .main { margin-left: 0; padding: 12px 12px 76px; }
-    .mobile-nav { display: block; }
+    .sidebar { display: none !important; }
+    .main { margin-left: 0 !important; padding: 12px 12px 76px !important; }
+    .mobile-nav { display: block !important; }
 
     /* Typography */
     .page-title { font-size: 19px; margin-bottom: 2px; }
@@ -437,7 +437,12 @@
 </nav>
 
 <main class="main">
-<button id="darkToggle" onclick="toggleDark()" title="Toggle dark mode">🌙</button>
+<!-- Mobile top header (only visible on mobile) -->
+<div id="mobileHeader" style="display:none;position:sticky;top:0;left:0;right:0;z-index:150;background:var(--surface);border-bottom:1px solid var(--border);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;margin:-12px -12px 16px;">
+  <div style="font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px;">📈 Stock Analyzer</div>
+  <button onclick="toggleDark()" style="background:none;border:1px solid var(--border);border-radius:50%;width:34px;height:34px;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;" title="Toggle dark mode" id="darkToggle">🌙</button>
+</div>
+<button id="darkToggleDt" onclick="toggleDark()" title="Toggle dark mode" style="position:fixed;top:20px;right:24px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:50%;width:38px;height:38px;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow);">🌙</button>
 
 <!-- ── PAGE 1: Stock Search ── -->
 <div id="page-search" class="page active">
@@ -971,6 +976,34 @@
 
 <script>
 // ── Navigation ────────────────────────────────────────────────────────────────
+// ── Mobile layout enforcement ─────────────────────────────────────────────────
+function applyMobileLayout() {
+  const isMobile  = window.innerWidth < 1024;
+  const sidebar   = document.querySelector('.sidebar');
+  const mainEl    = document.querySelector('.main');
+  const mobileNav = document.getElementById('mobileNav');
+  const mobHdr    = document.getElementById('mobileHeader');
+  const dtToggle  = document.getElementById('darkToggleDt');
+  if (!sidebar || !mainEl || !mobileNav) return;
+  if (isMobile) {
+    sidebar.style.display   = 'none';
+    mainEl.style.marginLeft = '0';
+    mainEl.style.padding    = '0 12px 76px';
+    mobileNav.style.display = 'block';
+    if (mobHdr)   mobHdr.style.display   = 'flex';
+    if (dtToggle) dtToggle.style.display = 'none';
+  } else {
+    sidebar.style.display   = '';
+    mainEl.style.marginLeft = '';
+    mainEl.style.padding    = '';
+    mobileNav.style.display = 'none';
+    if (mobHdr)   mobHdr.style.display   = 'none';
+    if (dtToggle) dtToggle.style.display = '';
+  }
+}
+window.addEventListener('DOMContentLoaded', applyMobileLayout);
+window.addEventListener('resize', applyMobileLayout);
+
 function showPage(name, btn) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
@@ -1010,7 +1043,8 @@ function toggleAccordion(header) {
 // ── Dark Mode ────────────────────────────────────────────────────────────────
 function toggleDark() {
   const isDark = document.body.classList.toggle('dark');
-  document.getElementById('darkToggle').textContent = isDark ? '☀️' : '🌙';
+  const icon = isDark ? '☀️' : '🌙';
+  ['darkToggle','darkToggleDt'].forEach(id => { const b = document.getElementById(id); if(b) b.textContent = icon; });
   localStorage.setItem('theme', isDark ? 'dark' : 'light');
 }
 (function() {
