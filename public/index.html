@@ -258,6 +258,8 @@
   .detail-panel.open { display: block; }
   .dca-ladder { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
   .dca-pill { background: var(--blue-lt); color: var(--blue); padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; font-family: 'DM Mono', monospace; }
+  .mob-drawer-btn { display:block; width:100%; text-align:left; padding:14px 16px; background:none; border:none; color:white; font-size:15px; font-family:inherit; cursor:pointer; border-radius:10px; transition:background 0.15s; }
+  .mob-drawer-btn:hover, .mob-drawer-btn.active { background:rgba(255,255,255,0.12); }
   .fund-pill { background: #F1EFE8; color: var(--text); padding: 3px 10px; border-radius: 20px; font-size: 11px; border: 1px solid var(--border); }
   .fund-pill-good { background: var(--green-lt); color: var(--green); border-color: var(--green-md); }
   .fund-pill-bad  { background: var(--red-lt);   color: var(--red);   border-color: var(--red-md);  }
@@ -437,11 +439,37 @@
 </nav>
 
 <main class="main">
-<!-- Mobile top header (only visible on mobile) -->
-<div id="mobileHeader" style="display:none;position:sticky;top:0;left:0;right:0;z-index:150;background:var(--surface);border-bottom:1px solid var(--border);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;margin:-12px -12px 16px;">
-  <div style="font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px;">📈 Stock Analyzer</div>
-  <button onclick="toggleDark()" style="background:none;border:1px solid var(--border);border-radius:50%;width:34px;height:34px;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;" title="Toggle dark mode" id="darkToggle">🌙</button>
+
+<!-- ══ MOBILE TOP BAR ══ -->
+<div id="mobileHeader" style="display:none; position:sticky; top:0; z-index:300; background:var(--surface); border-bottom:1px solid var(--border); padding:0 14px; height:52px; align-items:center; justify-content:space-between; margin:-12px -12px 16px;">
+  <button onclick="openMobileMenu()" style="background:none;border:none;font-size:26px;cursor:pointer;color:var(--text);padding:4px 8px;line-height:1;">☰</button>
+  <div style="font-size:15px;font-weight:700;">📈 Stock Analyzer</div>
+  <button onclick="toggleDark()" id="darkToggle" style="background:none;border:1px solid var(--border);border-radius:50%;width:34px;height:34px;font-size:15px;cursor:pointer;">🌙</button>
 </div>
+
+<!-- ══ MOBILE FULL-SCREEN MENU DRAWER ══ -->
+<div id="mobileMenuOverlay" onclick="closeMobileMenu()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:400;"></div>
+<div id="mobileMenuDrawer" style="display:none;position:fixed;top:0;left:0;bottom:0;width:80%;max-width:300px;background:#1A1A2E;z-index:500;overflow-y:auto;padding:0;transform:translateX(-100%);transition:transform 0.25s ease;">
+  <div style="padding:20px 20px 12px;border-bottom:1px solid rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:space-between;">
+    <div style="color:white;font-size:17px;font-weight:700;">📈 Stock Analyzer</div>
+    <button onclick="closeMobileMenu()" style="background:none;border:none;color:white;font-size:22px;cursor:pointer;">✕</button>
+  </div>
+  <div style="padding:12px 12px;">
+    <button class="mob-drawer-btn" onclick="mobNav('search')">🔍 Stock Search</button>
+    <button class="mob-drawer-btn" onclick="mobNav('picks')">📈 Daily Top Picks</button>
+    <button class="mob-drawer-btn" onclick="mobNav('options')">🎯 Options Analyzer</button>
+    <button class="mob-drawer-btn" onclick="mobNav('bulk')">📊 Bulk Analysis</button>
+    <button class="mob-drawer-btn" onclick="mobNav('portfolio')">💼 Portfolio Tracker</button>
+    <button class="mob-drawer-btn" onclick="mobNav('mf')">🏦 Mutual Funds & SIP</button>
+    <button class="mob-drawer-btn" onclick="mobNav('how')">📚 How It Works</button>
+  </div>
+  <div style="padding:12px 20px;border-top:1px solid rgba(255,255,255,0.1);margin-top:8px;">
+    <div style="color:rgba(255,255,255,0.4);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">⭐ Watchlist</div>
+    <div id="mobileWatchlist" style="font-size:12px;color:rgba(255,255,255,0.4);">No stocks saved yet.</div>
+  </div>
+</div>
+
+<!-- Desktop dark toggle (hidden on mobile) -->
 <button id="darkToggleDt" onclick="toggleDark()" title="Toggle dark mode" style="position:fixed;top:20px;right:24px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:50%;width:38px;height:38px;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow);">🌙</button>
 
 <!-- ── PAGE 1: Stock Search ── -->
@@ -978,31 +1006,52 @@
 // ── Navigation ────────────────────────────────────────────────────────────────
 // ── Mobile layout enforcement ─────────────────────────────────────────────────
 function applyMobileLayout() {
-  const isMobile  = window.innerWidth < 1024;
-  const sidebar   = document.querySelector('.sidebar');
-  const mainEl    = document.querySelector('.main');
-  const mobileNav = document.getElementById('mobileNav');
-  const mobHdr    = document.getElementById('mobileHeader');
-  const dtToggle  = document.getElementById('darkToggleDt');
-  if (!sidebar || !mainEl || !mobileNav) return;
+  const isMobile = window.innerWidth < 1024;
+  const sidebar  = document.querySelector('.sidebar');
+  const mainEl   = document.querySelector('.main');
+  const mobHdr   = document.getElementById('mobileHeader');
+  const mobNav   = document.getElementById('mobileNav');
+  const dtToggle = document.getElementById('darkToggleDt');
   if (isMobile) {
-    sidebar.style.display   = 'none';
-    mainEl.style.marginLeft = '0';
-    mainEl.style.padding    = '0 12px 76px';
-    mobileNav.style.display = 'block';
-    if (mobHdr)   mobHdr.style.display   = 'flex';
-    if (dtToggle) dtToggle.style.display = 'none';
+    if (sidebar)  sidebar.style.display   = 'none';
+    if (mainEl)   { mainEl.style.marginLeft = '0'; mainEl.style.padding = '0 12px 20px'; }
+    if (mobHdr)   mobHdr.style.display    = 'flex';
+    if (mobNav)   mobNav.style.display    = 'none';   // hide old bottom nav
+    if (dtToggle) dtToggle.style.display  = 'none';
   } else {
-    sidebar.style.display   = '';
-    mainEl.style.marginLeft = '';
-    mainEl.style.padding    = '';
-    mobileNav.style.display = 'none';
-    if (mobHdr)   mobHdr.style.display   = 'none';
-    if (dtToggle) dtToggle.style.display = '';
+    if (sidebar)  sidebar.style.display   = '';
+    if (mainEl)   { mainEl.style.marginLeft = ''; mainEl.style.padding = ''; }
+    if (mobHdr)   mobHdr.style.display    = 'none';
+    if (mobNav)   mobNav.style.display    = 'none';
+    if (dtToggle) dtToggle.style.display  = '';
   }
 }
 window.addEventListener('DOMContentLoaded', applyMobileLayout);
 window.addEventListener('resize', applyMobileLayout);
+
+// ── Mobile drawer menu ────────────────────────────────────────────────────────
+function openMobileMenu() {
+  document.getElementById('mobileMenuOverlay').style.display = 'block';
+  const drawer = document.getElementById('mobileMenuDrawer');
+  drawer.style.display = 'block';
+  setTimeout(() => drawer.style.transform = 'translateX(0)', 10);
+}
+function closeMobileMenu() {
+  const drawer = document.getElementById('mobileMenuDrawer');
+  drawer.style.transform = 'translateX(-100%)';
+  setTimeout(() => {
+    drawer.style.display = 'none';
+    document.getElementById('mobileMenuOverlay').style.display = 'none';
+  }, 260);
+}
+function mobNav(name) {
+  closeMobileMenu();
+  // highlight active in drawer
+  document.querySelectorAll('.mob-drawer-btn').forEach(b => b.classList.remove('active'));
+  const btns = document.querySelectorAll('#mobileMenuDrawer .mob-drawer-btn');
+  btns.forEach(b => { if (b.getAttribute('onclick')?.includes("'"+name+"'")) b.classList.add('active'); });
+  showPage(name, null);
+}
 
 function showPage(name, btn) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
