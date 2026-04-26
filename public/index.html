@@ -305,16 +305,18 @@
   .mobile-nav {
     display: none;
     position: fixed; bottom: 0; left: 0; right: 0;
-    background: var(--surface); border-top: 1px solid var(--border);
-    z-index: 200; height: 62px; padding-bottom: env(safe-area-inset-bottom);
+    background: var(--surface); border-top: 2px solid var(--border);
+    z-index: 200; height: 64px;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    box-shadow: 0 -4px 16px rgba(0,0,0,0.10);
   }
-  .mobile-nav-inner { display: flex; height: 62px; }
+  .mobile-nav-inner { display: flex; height: 64px; }
   .mob-nav-btn {
     flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    background: none; border: none; cursor: pointer; font-size: 20px; gap: 2px;
-    color: var(--text3); padding: 6px 2px; transition: color 0.15s; font-family: inherit;
+    background: none; border: none; cursor: pointer; font-size: 22px; gap: 3px;
+    color: var(--text3); padding: 8px 2px; transition: color 0.15s; font-family: inherit;
   }
-  .mob-nav-btn span { font-size: 9px; font-weight: 600; letter-spacing: 0.2px; }
+  .mob-nav-btn span { font-size: 9px; font-weight: 700; letter-spacing: 0.2px; }
   .mob-nav-btn.active { color: var(--blue); }
   .mob-nav-btn.active span { color: var(--blue); }
 
@@ -325,15 +327,20 @@
     .mobile-nav { display: block; }
 
     /* Typography */
-    .page-title { font-size: 20px; }
-    .page-sub { font-size: 13px; margin-bottom: 16px; }
+    .page-title { font-size: 19px; margin-bottom: 2px; }
+    .page-sub { font-size: 12px; margin-bottom: 14px; color: var(--text3); }
+
+    /* Sector chips — slightly bigger tap target */
+    .quick-chip { padding: 7px 14px; font-size: 12px; }
+    .sector-label { font-size: 12px; }
 
     /* Dark mode toggle */
     #darkToggle { top: 10px; right: 10px; width: 34px; height: 34px; font-size: 16px; }
 
-    /* Search */
-    .search-row { flex-wrap: wrap; }
-    .search-row .btn { width: 100%; }
+    /* Search — stack vertically on mobile */
+    .search-row { flex-direction: column; }
+    .search-row .btn { width: 100%; padding: 14px; font-size: 15px; border-radius: 12px; }
+    .search-input { font-size: 14px; padding: 13px 14px; }
 
     /* Grids */
     .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
