@@ -193,10 +193,19 @@ function buildExplanation(ind, name) {
 // ─────────────────────────────────────────────
 //  Portfolio Decision Engine
 // ─────────────────────────────────────────────
-function portfolioDecision(techScore, pnlPct, ind, currentPrice, buyPrice, week52High) {
-  const sma200 = ind.movingAverages.sma200;
+function portfolioDecision(techScore, pnlPct, ind, currentPrice, buyPrice, week52High, quantity) {
+  const sma200    = ind.movingAverages.sma200;
   const crossType = ind.movingAverages.crossType;
-  const rsi = ind.rsi.value;
+  const rsi       = ind.rsi.value;
+
+  // ── Small position guard ─────────────────────
+  // Don't recommend partial exits for tiny positions (< 15 shares or < ₹50,000 value)
+  const positionValue = quantity ? currentPrice * quantity : Infinity;
+  const isSmallPosition = quantity && (quantity < 15 || positionValue < 50000);
+
+  // ── RSI Recovery check ───────────────────────
+  // If RSI is above 50 and rising, stock is recovering — soften bearish calls
+  const isRecovering = rsi > 50;
 
   // ── Computed values ──────────────────────────
   // Stop loss MUST always be below current price.
@@ -204,10 +213,8 @@ function portfolioDecision(techScore, pnlPct, ind, currentPrice, buyPrice, week5
   // In loss    → 7% below current price only (buy price is already above current — irrelevant)
   let stopLoss;
   if (currentPrice >= buyPrice) {
-    // In profit: protect capital — SL = higher of buy price or 7% below current
     stopLoss = +Math.max(buyPrice, currentPrice * 0.93).toFixed(2);
   } else {
-    // In loss: SL purely based on current price — must be below it
     stopLoss = +(currentPrice * 0.93).toFixed(2);
   }
 
@@ -299,6 +306,21 @@ function portfolioDecision(techScore, pnlPct, ind, currentPrice, buyPrice, week5
   // ── Sell zone (-3 to -1) ─────────────────────
   if (techScore < -1) {
     if (pnlPct < -10) {
+      // If price is recovering (RSI > 50), soften CUT LOSS → HOLD with tight SL
+      if (isRecovering) {
+        return {
+          action: 'HOLD — TIGHT SL', urgency: 'MEDIUM', actionColor: '#D68910',
+          urgencyBadge: '🟡 MEDIUM',
+          timeHorizon: 'Hold but protect with stop loss',
+          reasoning: [
+            `Stock is down ${Math.abs(pnlPct).toFixed(1)}% but RSI ${rsi.toFixed(0)} shows price recovering`,
+            'Technicals are mixed — short-term bearish but momentum improving',
+            `Keep strict stop loss at ₹${stopLoss} — exit if this level breaks`,
+            'If RSI crosses 60 and price holds, technicals will improve',
+          ],
+          stopLoss, targetPrice, averageAt: null, breakEvenGainPct, riskRewardRatio: rr,
+        };
+      }
       return {
         action: 'CUT LOSS', urgency: 'HIGH', actionColor: '#C0392B',
         urgencyBadge: '🟠 HIGH',
@@ -306,7 +328,7 @@ function portfolioDecision(techScore, pnlPct, ind, currentPrice, buyPrice, week5
         reasoning: [
           `Bearish technical signal (score ${techScore.toFixed(1)}) combined with ${Math.abs(pnlPct).toFixed(1)}% loss`,
           'Risk of further decline is high — technicals confirm weakness',
-          deathCrossBlock ? 'Death Cross active — long-term trend is negative' : `Stop loss at ₹${stopLoss} already breached`,
+          deathCrossBlock ? 'Death Cross active — long-term trend is negative' : `RSI at ${rsi.toFixed(0)} — no recovery signal yet`,
           'Cutting loss now limits damage vs holding in deteriorating stock',
         ],
         stopLoss, targetPrice, averageAt: null, breakEvenGainPct, riskRewardRatio: rr,
@@ -325,6 +347,21 @@ function portfolioDecision(techScore, pnlPct, ind, currentPrice, buyPrice, week5
         stopLoss, targetPrice, averageAt: null, breakEvenGainPct, riskRewardRatio: rr,
       };
     } else if (pnlPct > 15) {
+      // Small position → don't tell them to sell, just protect with SL
+      if (isSmallPosition) {
+        return {
+          action: 'HOLD — PROTECT GAINS', urgency: 'LOW', actionColor: '#1E8449',
+          urgencyBadge: '🟢 LOW',
+          timeHorizon: 'Hold — position too small to partially exit',
+          reasoning: [
+            `Small position (${quantity} shares, ₹${Math.round(positionValue).toLocaleString('en-IN')}) — partial exit not practical`,
+            `You are up ${pnlPct.toFixed(1)}% — let it ride with a trailing stop`,
+            `Protect gains: move stop loss up to ₹${stopLoss}`,
+            'Exit fully only if stop loss is breached',
+          ],
+          stopLoss, targetPrice, averageAt: null, breakEvenGainPct, riskRewardRatio: rr,
+        };
+      }
       return {
         action: 'BOOK PROFIT', urgency: 'HIGH', actionColor: '#C0392B',
         urgencyBadge: '🟠 HIGH',
@@ -338,6 +375,21 @@ function portfolioDecision(techScore, pnlPct, ind, currentPrice, buyPrice, week5
         stopLoss, targetPrice, averageAt: null, breakEvenGainPct, riskRewardRatio: rr,
       };
     } else {
+      // Small position in small profit → just hold
+      if (isSmallPosition) {
+        return {
+          action: 'HOLD', urgency: 'LOW', actionColor: '#888',
+          urgencyBadge: '⚪ LOW',
+          timeHorizon: 'Hold — position too small to partially exit',
+          reasoning: [
+            `Small position (${quantity} shares) — partial exit not practical`,
+            `Technicals slightly bearish (score ${techScore.toFixed(1)}) but not enough to exit entirely`,
+            `Keep stop loss at ₹${stopLoss} — exit fully only if breached`,
+            'Re-evaluate when position size is larger',
+          ],
+          stopLoss, targetPrice, averageAt: null, breakEvenGainPct, riskRewardRatio: rr,
+        };
+      }
       return {
         action: 'BOOK PROFIT', urgency: 'MEDIUM', actionColor: '#D35400',
         urgencyBadge: '🟡 MEDIUM',
@@ -912,7 +964,7 @@ app.post('/api/portfolio', upload.single('file'), async (req, res) => {
       row.macd           = ind.macd.score === 1 ? 'Bullish' : 'Bearish';
       row.maCross        = ind.movingAverages.crossType === 'golden' ? 'Golden Cross' : ind.movingAverages.crossType === 'death' ? 'Death Cross' : 'Neutral';
 
-      row.decision = portfolioDecision(ind.totalScore, row.pnlPct, ind, cp, h.buyPrice, quote?.fiftyTwoWeekHigh || null);
+      row.decision = portfolioDecision(ind.totalScore, row.pnlPct, ind, cp, h.buyPrice, quote?.fiftyTwoWeekHigh || null, h.quantity);
 
       // ── Fundamentals ──────────────────────────
       const fd = fsData?.financialData;
